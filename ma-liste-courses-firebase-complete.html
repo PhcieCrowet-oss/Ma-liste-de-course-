@@ -1,0 +1,2420 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ma Liste de Courses Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ml5@latest/dist/ml5.min.js"></script>
+    <!-- Firebase SDK (Compat version) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+        }
+        .emoji { font-size: 1.5em; }
+        .modal-overlay { background: rgba(0, 0, 0, 0.5); }
+        .slide-in { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+            gap: 8px;
+        }
+        .product-btn {
+            transition: all 0.2s;
+        }
+        .product-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        #video-preview {
+            width: 100%;
+            max-width: 300px;
+            border-radius: 8px;
+        }
+        .ean-result {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .auth-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .auth-card { background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); padding: 32px; max-width: 400px; width: 100%; }
+        .loading { text-align: center; padding: 20px; }
+        .spinner { display: inline-block; width: 40px; height: 40px; border: 4px solid rgba(59, 130, 246, 0.2); border-top: 4px solid rgb(59, 130, 246); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-white to-blue-50">
+    <div id="app"></div>
+
+    <script>
+        // Configuration Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCol3oPOehiRL6wmcjs6ntrZ8k4qaaJJYc",
+            authDomain: "ma-liste-courses.firebaseapp.com",
+            databaseURL: "https://ma-liste-courses-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "ma-liste-courses",
+            storageBucket: "ma-liste-courses.firebasestorage.app",
+            messagingSenderId: "312232350580",
+            appId: "1:312232350580:web:faec3e5e34b85c12f89221"
+        };
+
+        // Initialiser Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+
+        // Base de données de produits alimentaires belges
+        let CATEGORIES_DB = {
+            'Fruits': { icon: '🍎', photo: null },
+            'Légumes': { icon: '🥕', photo: null },
+            'Produits laitiers': { icon: '🥛', photo: null },
+            'Protéines': { icon: '🥚', photo: null },
+            'Féculents': { icon: '🍚', photo: null },
+            'Basiques': { icon: '🧂', photo: null },
+            'Surgelés': { icon: '❄️', photo: null },
+            'Divers': { icon: '📦', photo: null }
+        };
+
+        const PRODUCTS_DB = {
+            'Fruits': [
+                { id: 'pomme', name: 'Pommes', emoji: '🍎', ean: '5901234123457' },
+                { id: 'banane', name: 'Bananes', emoji: '🍌', ean: '4011564128491' },
+                { id: 'orange', name: 'Oranges', emoji: '🍊', ean: '8006111900108' },
+                { id: 'fraise', name: 'Fraises', emoji: '🍓', ean: '5410021065015' },
+                { id: 'myrtille', name: 'Myrtilles', emoji: '🫐', ean: '5410317000149' },
+                { id: 'poire', name: 'Poires', emoji: '🍐', ean: '5901234123464' },
+                { id: 'raisin', name: 'Raisins', emoji: '🍇', ean: '8006111900115' },
+                { id: 'peche', name: 'Pêches', emoji: '🍑', ean: '5410021065022' },
+                { id: 'cerise', name: 'Cerises', emoji: '🍒', ean: '5901234123471' },
+                { id: 'kiwi', name: 'Kiwis', emoji: '🥝', ean: '3175680112458' },
+            ],
+            'Légumes': [
+                { id: 'carotte', name: 'Carottes', emoji: '🥕', ean: '5411188046000' },
+                { id: 'tomate', name: 'Tomates', emoji: '🍅', ean: '5901234123488' },
+                { id: 'salade', name: 'Salade verte', emoji: '🥗', ean: '5411188045997' },
+                { id: 'poivron', name: 'Poivrons', emoji: '🫑', ean: '5410021065029' },
+                { id: 'oignon', name: 'Oignons', emoji: '🧅', ean: '5901234123495' },
+                { id: 'ail', name: 'Ail', emoji: '🧄', ean: '8716600080160' },
+                { id: 'brocoli', name: 'Brocoli', emoji: '🥦', ean: '5410317000156' },
+                { id: 'chou', name: 'Chou', emoji: '🥬', ean: '5411188046007' },
+                { id: 'concombre', name: 'Concombres', emoji: '🥒', ean: '5410317000163' },
+                { id: 'epinard', name: 'Épinards', emoji: '🥬', ean: '5901234123502' },
+                { id: 'champignon', name: 'Champignons', emoji: '🍄', ean: '5411188046014' },
+                { id: 'courge', name: 'Courges', emoji: '🎃', ean: '5410021065036' },
+            ],
+            'Produits laitiers': [
+                { id: 'lait', name: 'Lait entier', emoji: '🥛', ean: '3274080005003' },
+                { id: 'yaourt', name: 'Yaourt nature', emoji: '🥛', ean: '3175681000000' },
+                { id: 'fromage', name: 'Fromage', emoji: '🧀', ean: '5901234123519' },
+                { id: 'beurre', name: 'Beurre', emoji: '🧈', ean: '3250390001200' },
+                { id: 'creme', name: 'Crème fraîche', emoji: '🥛', ean: '3302740085309' },
+                { id: 'fromage-blanc', name: 'Fromage blanc', emoji: '🥛', ean: '3176552000006' },
+            ],
+            'Protéines': [
+                { id: 'oeuf', name: 'Œufs', emoji: '🥚', ean: '5901234123526' },
+                { id: 'poulet', name: 'Poulet', emoji: '🍗', ean: '5410021065043' },
+                { id: 'boeuf', name: 'Viande de bœuf', emoji: '🥩', ean: '5901234123533' },
+                { id: 'poisson', name: 'Poisson blanc', emoji: '🐟', ean: '8712100902253' },
+                { id: 'saumon', name: 'Saumon', emoji: '🐠', ean: '5410317000170' },
+                { id: 'jambon', name: 'Jambon de Belgique', emoji: '🍖', ean: '5901234123540' },
+                { id: 'lentille', name: 'Lentilles', emoji: '🫘', ean: '8711953000022' },
+                { id: 'pois-chiche', name: 'Pois chiches', emoji: '🫘', ean: '8711953000015' },
+            ],
+            'Féculents': [
+                { id: 'riz', name: 'Riz blanc', emoji: '🍚', ean: '8711953000008' },
+                { id: 'pates', name: 'Pâtes', emoji: '🍝', ean: '8001200500000' },
+                { id: 'pain', name: 'Pain complet', emoji: '🍞', ean: '5901234123557' },
+                { id: 'pomme-terre', name: 'Pommes de terre', emoji: '🥔', ean: '5410317000187' },
+                { id: 'ble', name: 'Blé complet', emoji: '🌾', ean: '8711953000029' },
+            ],
+            'Basiques': [
+                { id: 'sel', name: 'Sel', emoji: '🧂', ean: '8710447003333' },
+                { id: 'huile', name: 'Huile olive', emoji: '🫒', ean: '8006111900122' },
+                { id: 'vinaigre', name: 'Vinaigre', emoji: '🧊', ean: '3596710003098' },
+                { id: 'miel', name: 'Miel', emoji: '🍯', ean: '5901234123564' },
+                { id: 'farine', name: 'Farine', emoji: '🌾', ean: '8711953000036' },
+            ],
+            'Surgelés': [
+                { id: 'legumes-surgeles', name: 'Légumes surgelés', emoji: '❄️', ean: '5410317000194' },
+                { id: 'fruits-surgeles', name: 'Fruits surgelés', emoji: '❄️', ean: '5410317000201' },
+                { id: 'glace', name: 'Glace', emoji: '🍨', ean: '5901234123571' },
+            ],
+            'Divers': [],
+        };
+
+        class ShoppingApp {
+            constructor() {
+                this.items = [];
+                this.userName = 'Vous';
+                this.selectedCategory = null;
+                this.searchTerm = '';
+                this.showSuggestions = false;
+                this.modal = null;
+                this.detector = null;
+                this.newProductPhoto = null;
+                this.currentUser = null;
+                this.isLoading = true;
+                this.activeTab = 'list';  // 'list' ou 'categories'
+
+                this.setupAuthListener();
+                this.render(); // Afficher le spinner au démarrage
+            }
+
+            switchTab(tabName) {
+                this.activeTab = tabName;
+                this.render();
+            }
+
+            setupAuthListener() {
+                // Afficher le loading screen immédiatement
+                this.isLoading = true;
+                this.render();
+                
+                // Timeout de sécurité : si Firebase ne répond pas après 5s, afficher l'écran d'auth
+                setTimeout(() => {
+                    if (!this.currentUser) {
+                        this.isLoading = false;
+                        this.render();
+                    }
+                }, 5000);
+                
+                auth.onAuthStateChanged(async (user) => {
+                    if (user) {
+                        this.currentUser = user;
+                        this.userName = user.email.split('@')[0];
+                        await this.loadData();
+                        this.isLoading = false;
+                        this.init();
+                    } else {
+                        this.isLoading = false;
+                        this.render();
+                    }
+                });
+            }
+
+            async signup(email, password) {
+                try {
+                    this.isLoading = true;
+                    const result = await auth.createUserWithEmailAndPassword(email, password);
+                    this.currentUser = result.user;
+                    this.userName = email.split('@')[0];
+                    await this.initializeUserData();
+                    this.init();
+                } catch (error) {
+                    alert('Erreur inscription: ' + error.message);
+                    this.isLoading = false;
+                    this.render();
+                }
+            }
+
+            async signin(email, password) {
+                try {
+                    this.isLoading = true;
+                    const result = await auth.signInWithEmailAndPassword(email, password);
+                    this.currentUser = result.user;
+                    this.userName = email.split('@')[0];
+                    await this.loadData();
+                    this.init();
+                } catch (error) {
+                    alert('Erreur connexion: ' + error.message);
+                    this.isLoading = false;
+                    this.render();
+                }
+            }
+
+            logout() {
+                auth.signOut();
+                this.currentUser = null;
+                this.showAuthScreen();
+            }
+
+            async initializeUserData() {
+                if (!this.currentUser) return;
+                
+                const userRef = database.ref('users/' + this.currentUser.uid);
+                await userRef.set({
+                    items: [],
+                    categories: CATEGORIES_DB,
+                    products: PRODUCTS_DB,
+                    userName: this.userName
+                });
+            }
+
+            async loadData() {
+                if (!this.currentUser) return;
+                
+                try {
+                    // Charger d'abord de localStorage (fallback local)
+                    const localData = localStorage.getItem(`list_${this.currentUser.uid}`);
+                    if (localData) {
+                        const data = JSON.parse(localData);
+                        this.items = data.items || [];
+                        Object.assign(CATEGORIES_DB, data.categories || {});
+                        Object.assign(PRODUCTS_DB, data.products || {});
+                        this.userName = data.userName || this.userName;
+                    }
+                    
+                    // Charger une première fois de Firebase
+                    try {
+                        const snapshot = await database.ref('users/' + this.currentUser.uid).once('value');
+                        const data = snapshot.val();
+                        
+                        if (data) {
+                            this.items = data.items || [];
+                            Object.assign(CATEGORIES_DB, data.categories || {});
+                            Object.assign(PRODUCTS_DB, data.products || {});
+                            this.userName = data.userName || this.userName;
+                            this.render();
+                        } else if (!localData) {
+                            await this.initializeUserData();
+                        }
+                    } catch (firebaseError) {
+                        // Firebase indisponible, on continue avec localStorage
+                    }
+                    
+                    // Mettre en place un listener temps réel pour les mises à jour
+                    if (this.currentUser) {
+                        database.ref('users/' + this.currentUser.uid).on('value', (snapshot) => {
+                            const data = snapshot.val();
+                            if (data) {
+                                this.items = data.items || [];
+                                Object.assign(CATEGORIES_DB, data.categories || {});
+                                Object.assign(PRODUCTS_DB, data.products || {});
+                                this.userName = data.userName || this.userName;
+                                this.render();
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Erreur chargement:', error);
+                }
+            }
+
+            async saveData() {
+                if (!this.currentUser) return;
+                
+                const dataToSave = {
+                    items: this.items,
+                    categories: CATEGORIES_DB,
+                    products: PRODUCTS_DB,
+                    userName: this.userName,
+                    lastUpdate: new Date().toISOString()
+                };
+                
+                // Sauvegarder dans localStorage (toujours)
+                localStorage.setItem(`list_${this.currentUser.uid}`, JSON.stringify(dataToSave));
+                
+                // Essayer Firebase (bonus)
+                try {
+                    await database.ref('users/' + this.currentUser.uid).set(dataToSave);
+                } catch (error) {
+                    // Firebase échoue mais localStorage a les données
+                }
+            }
+
+            init() {
+                this.loadCategoriesDB();
+                this.render();
+                this.attachEventListeners();
+            }
+
+            showAuthScreen() {
+                const root = document.getElementById('app');
+                root.innerHTML = `
+                    <div class="auth-screen">
+                        <div class="auth-card">
+                            <div class="text-center mb-8">
+                                <div class="text-5xl mb-3">🛒</div>
+                                <h1 class="text-3xl font-bold text-slate-900">Ma Liste</h1>
+                                <p class="text-slate-600 mt-2">Synchronisation complète en temps réel</p>
+                            </div>
+                            
+                            ${this.isLoading ? `
+                                <div class="loading">
+                                    <div class="spinner"></div>
+                                    <p class="mt-4 text-slate-600">Chargement...</p>
+                                </div>
+                            ` : `
+                                <div class="space-y-4">
+                                    <div>
+                                        <input id="auth-email" type="email" placeholder="Email" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                    <div>
+                                        <input id="auth-password" type="password" placeholder="Mot de passe (min 6 caractères)" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                    <button onclick="app.signin(document.getElementById('auth-email').value, document.getElementById('auth-password').value)" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 rounded-lg transition">
+                                        Se connecter
+                                    </button>
+                                    <button onclick="app.signup(document.getElementById('auth-email').value, document.getElementById('auth-password').value)" class="w-full bg-slate-200 hover:bg-slate-300 text-slate-900 font-semibold py-2 rounded-lg transition">
+                                        Créer un compte
+                                    </button>
+                                </div>
+                                <div class="mt-6 pt-6 border-t border-slate-200">
+                                    <p class="text-xs text-slate-600 text-center">
+                                        <strong>💡 Conseil :</strong> Utilisez le <strong>MÊME email et mot de passe</strong> sur les deux appareils pour synchroniser la liste !
+                                    </p>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // === TOUTES LES MÉTHODES ORIGINALES GARDÉES ===
+            // Je garde le reste du code original...
+            
+            loadCategoriesDB() {
+                const saved = localStorage.getItem('productsDB');
+                const savedCat = localStorage.getItem('categoriesDB');
+                if (saved) {
+                    Object.assign(PRODUCTS_DB, JSON.parse(saved));
+                }
+                if (savedCat) {
+                    CATEGORIES_DB = JSON.parse(savedCat);
+                }
+            }
+
+            saveItems() {
+                this.saveData();
+                this.render();
+            }
+
+            saveName(name) {
+                if (name.trim()) {
+                    this.userName = name;
+                    this.saveData();
+                    this.render();
+                }
+            }
+
+            addItem(product, quantity = 1, unit = 'pièce', notes = '') {
+                const category = Object.entries(PRODUCTS_DB).find(
+                    ([_, products]) => products.some(p => p.id === product.id)
+                )?.[0];
+
+                this.items.push({
+                    id: Date.now(),
+                    productId: product.id,
+                    name: product.name,
+                    emoji: product.emoji,
+                    category: category,
+                    quantity: quantity,
+                    unit: unit,
+                    notes: notes,
+                    completed: false,
+                    addedBy: this.userName,
+                    timestamp: new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' })
+                });
+                this.modal = null;
+                this.searchTerm = '';
+                this.saveItems();
+            }
+
+            addCustomItem(name, emoji = '📦', category = 'Divers', notes = '', unit = 'pièce') {
+                if (!PRODUCTS_DB[category]) {
+                    PRODUCTS_DB[category] = [];
+                }
+                
+                const customProduct = {
+                    id: 'custom-' + Date.now(),
+                    name: name,
+                    emoji: emoji,
+                    isCustom: true
+                };
+                
+                PRODUCTS_DB[category].push(customProduct);
+                this.saveCategoriesDB();
+                
+                this.items.push({
+                    id: Date.now(),
+                    productId: customProduct.id,
+                    name: name,
+                    emoji: emoji,
+                    category: category,
+                    quantity: 1,
+                    unit: unit,
+                    notes: notes,
+                    completed: false,
+                    addedBy: this.userName,
+                    timestamp: new Date().toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' })
+                });
+                this.modal = null;
+                this.saveItems();
+            }
+
+            saveCategoriesDB() {
+                this.saveData();
+            }
+
+            editItem(itemId, name, emoji, category, unit = 'pièce', notes = '') {
+                const item = this.items.find(i => i.id === itemId);
+                if (item) {
+                    item.name = name;
+                    item.emoji = emoji;
+                    item.category = category;
+                    item.unit = unit;
+                    item.notes = notes;
+                    this.saveItems();
+                }
+            }
+
+            editProduct(productId, newName, newEmoji) {
+                for (let category of Object.values(PRODUCTS_DB)) {
+                    const product = category.find(p => p.id === productId);
+                    if (product) {
+                        product.name = newName;
+                        product.emoji = newEmoji;
+                        this.saveCategoriesDB();
+                        break;
+                    }
+                }
+            }
+
+            editCategory(oldName, newName, newIcon, newPhoto = null) {
+                if (CATEGORIES_DB[oldName]) {
+                    const oldData = CATEGORIES_DB[oldName];
+                    delete CATEGORIES_DB[oldName];
+                    CATEGORIES_DB[newName] = { 
+                        icon: newIcon || oldData.icon,
+                        photo: newPhoto !== null ? newPhoto : oldData.photo
+                    };
+                    
+                    if (PRODUCTS_DB[oldName]) {
+                        PRODUCTS_DB[newName] = PRODUCTS_DB[oldName];
+                        delete PRODUCTS_DB[oldName];
+                    }
+                    
+                    this.items.forEach(item => {
+                        if (item.category === oldName) {
+                            item.category = newName;
+                        }
+                    });
+                    
+                    this.saveCategoriesDB();
+                    this.saveItems();
+                }
+            }
+
+            deleteCategory(categoryName) {
+                if (CATEGORIES_DB[categoryName]) {
+                    delete CATEGORIES_DB[categoryName];
+                    if (PRODUCTS_DB[categoryName]) {
+                        delete PRODUCTS_DB[categoryName];
+                    }
+                    this.items = this.items.filter(item => item.category !== categoryName);
+                    this.saveCategoriesDB();
+                    this.saveItems();
+                }
+            }
+
+            setCategoryPhoto(categoryName, photoUrl) {
+                if (CATEGORIES_DB[categoryName]) {
+                    CATEGORIES_DB[categoryName].photo = photoUrl;
+                    this.saveCategoriesDB();
+                }
+            }
+
+            setCategoryIcon(categoryName, icon) {
+                if (CATEGORIES_DB[categoryName]) {
+                    CATEGORIES_DB[categoryName].icon = icon;
+                    this.saveCategoriesDB();
+                    this.render();
+                }
+            }
+
+            toggleItem(id) {
+                const item = this.items.find(i => i.id === id);
+                if (item) {
+                    item.completed = !item.completed;
+                    this.saveItems();
+                }
+            }
+
+            deleteItem(id) {
+                this.items = this.items.filter(i => i.id !== id);
+                this.saveItems();
+            }
+
+            getFilteredProducts() {
+                if (!this.searchTerm.trim()) return [];
+                const results = [];
+                Object.entries(PRODUCTS_DB).forEach(([category, products]) => {
+                    products.forEach(p => {
+                        if (p.name.toLowerCase().includes(this.searchTerm.toLowerCase())) {
+                            results.push({ ...p, category });
+                        }
+                    });
+                });
+                return results.slice(0, 8);
+            }
+
+            getDisplayItems() {
+                if (!this.selectedCategory || this.selectedCategory === 'Tous') {
+                    return this.items;
+                }
+                return this.items.filter(item => item.category === this.selectedCategory);
+            }
+
+            findProduct(productId) {
+                for (let category of Object.values(PRODUCTS_DB)) {
+                    const product = category.find(p => p.id === productId);
+                    if (product) return product;
+                }
+                return null;
+            }
+
+            showCategoryModal(categoryName) {
+                this.modal = { type: 'category', category: categoryName };
+                this.render();
+            }
+
+            showAddCustomModal() {
+                this.modal = { type: 'custom' };
+                this.render();
+            }
+
+            showScannerModal() {
+                this.modal = { type: 'scanner' };
+                this.render();
+                setTimeout(() => this.initScanner(), 500);
+            }
+
+            showPhotoModal() {
+                this.modal = { type: 'photo' };
+                this.render();
+                setTimeout(() => this.initPhotoRecognition(), 500);
+            }
+
+            showEditItemModal(itemId) {
+                const item = this.items.find(i => i.id === itemId);
+                if (item) {
+                    this.modal = { type: 'editItem', item: item };
+                    this.render();
+                }
+            }
+
+            showManageCategoriesModal() {
+                this.modal = { type: 'manageCategories' };
+                this.render();
+            }
+
+            showManageProductsModal(categoryName) {
+                this.modal = { type: 'manageProducts', categoryName: categoryName };
+                this.render();
+            }
+
+            showEditCategoryModal(categoryName) {
+                this.modal = { type: 'editCategory', categoryName: categoryName };
+                this.render();
+            }
+
+            showAddProductModal(categoryName) {
+                this.modal = { type: 'addProduct', categoryName: categoryName };
+                this.render();
+            }
+
+            addProductToDatabase(name, emoji, categoryName, photo = null) {
+                if (!PRODUCTS_DB[categoryName]) {
+                    PRODUCTS_DB[categoryName] = [];
+                }
+                
+                const newProduct = {
+                    id: 'prod-' + Date.now(),
+                    name: name,
+                    emoji: emoji,
+                    photo: photo || null,
+                    isCustom: true
+                };
+                
+                PRODUCTS_DB[categoryName].push(newProduct);
+                this.saveCategoriesDB();
+                
+                this.modal = { type: 'manageProducts', categoryName: categoryName };
+                this.render();
+            }
+
+            convertImageToBase64(file) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            setProductPhoto(categoryName, productId, photoUrl) {
+                const products = PRODUCTS_DB[categoryName];
+                if (products) {
+                    const product = products.find(p => p.id === productId);
+                    if (product) {
+                        product.photo = photoUrl;
+                        this.items.forEach(item => {
+                            if (item.productId === productId) {
+                                item.photo = photoUrl;
+                            }
+                        });
+                        this.saveCategoriesDB();
+                        this.saveItems();
+                    }
+                }
+            }
+
+            deleteProduct(categoryName, productId) {
+                const products = PRODUCTS_DB[categoryName];
+                if (products) {
+                    const index = products.findIndex(p => p.id === productId);
+                    if (index > -1) {
+                        products.splice(index, 1);
+                        this.items = this.items.filter(item => item.productId !== productId);
+                        this.saveCategoriesDB();
+                        this.saveItems();
+                    }
+                }
+            }
+
+            moveProductToCategory(oldCategory, newCategory, productId) {
+                const products = PRODUCTS_DB[oldCategory];
+                if (!products) return;
+                
+                const product = products.find(p => p.id === productId);
+                if (!product) return;
+                
+                if (oldCategory === newCategory) return;
+                
+                const index = products.findIndex(p => p.id === productId);
+                products.splice(index, 1);
+                
+                if (!PRODUCTS_DB[newCategory]) {
+                    PRODUCTS_DB[newCategory] = [];
+                }
+                PRODUCTS_DB[newCategory].push(product);
+                
+                this.items.forEach(item => {
+                    if (item.productId === productId) {
+                        item.category = newCategory;
+                    }
+                });
+                
+                this.saveCategoriesDB();
+                this.saveItems();
+            }
+
+            updateQuantity(itemId, newQuantity) {
+                const item = this.items.find(i => i.id === itemId);
+                if (item && newQuantity > 0) {
+                    item.quantity = newQuantity;
+                    this.saveItems();
+                }
+            }
+
+            increaseQuantity(itemId) {
+                const item = this.items.find(i => i.id === itemId);
+                if (item) {
+                    item.quantity = (item.quantity || 1) + 1;
+                    this.saveItems();
+                }
+            }
+
+            decreaseQuantity(itemId) {
+                const item = this.items.find(i => i.id === itemId);
+                if (item && item.quantity > 1) {
+                    item.quantity = item.quantity - 1;
+                    this.saveItems();
+                }
+            }
+
+            changeUnit(itemId, newUnit) {
+                const item = this.items.find(i => i.id === itemId);
+                if (item) {
+                    item.unit = newUnit;
+                    this.saveItems();
+                }
+            }
+
+            groupItemsByCategory(items) {
+                const grouped = {};
+                const categoryOrder = Object.keys(CATEGORIES_DB);
+                
+                categoryOrder.forEach(cat => {
+                    grouped[cat] = [];
+                });
+                
+                items.forEach(item => {
+                    if (!grouped[item.category]) {
+                        grouped[item.category] = [];
+                    }
+                    grouped[item.category].push(item);
+                });
+                
+                return categoryOrder.filter(cat => grouped[cat].length > 0).map(cat => ({
+                    category: cat,
+                    emoji: CATEGORIES_DB[cat],
+                    items: grouped[cat]
+                }));
+            }
+
+            showAddCategoryModal() {
+                this.modal = { type: 'addCategory' };
+                this.render();
+            }
+
+            initScanner() {
+                const video = document.getElementById('video-scanner');
+                if (!video) return;
+
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+                    .then(stream => {
+                        video.srcObject = stream;
+                        video.play();
+                        this.scanBarcode(video);
+                    })
+                    .catch(err => {
+                        alert('Accès caméra refusé: ' + err.message);
+                    });
+            }
+
+            scanBarcode(video) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const scanInterval = setInterval(() => {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        ctx.drawImage(video, 0, 0);
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const code = jsQR(imageData.data, imageData.width, imageData.height);
+                        
+                        if (code) {
+                            this.processEAN(code.data);
+                            clearInterval(scanInterval);
+                        }
+                    }
+                }, 300);
+            }
+
+            processEAN(eanCode) {
+                const found = Object.entries(PRODUCTS_DB).find(([_, products]) =>
+                    products.some(p => p.ean === eanCode)
+                );
+
+                if (found) {
+                    const product = found[1].find(p => p.ean === eanCode);
+                    this.addItem(product);
+                    this.modal = { type: 'scanner', message: `✅ ${product.name} ajouté!` };
+                    setTimeout(() => {
+                        this.modal = null;
+                        this.render();
+                    }, 1500);
+                } else {
+                    this.modal = { type: 'scanner', message: '❌ Code non trouvé' };
+                }
+            }
+
+            initPhotoRecognition() {
+                const input = document.getElementById('photo-input');
+                const preview = document.getElementById('photo-preview');
+                const canvas = document.getElementById('canvas-photo');
+
+                if (!input) return;
+
+                input.addEventListener('change', (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            preview.src = event.target.result;
+                            preview.style.display = 'block';
+                            this.recognizeFood(canvas, img);
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            recognizeFood(canvas, img) {
+                ml5.imageClassifier('MobileNet', () => {
+                    const classifier = ml5.imageClassifier('MobileNet', () => {
+                        classifier.classify(img, (err, results) => {
+                            if (err) {
+                                alert('Erreur de reconnaissance: ' + err);
+                                return;
+                            }
+
+                            const topResult = results[0].label.toLowerCase();
+                            const resultDiv = document.getElementById('recognition-result');
+                            
+                            let foundProduct = null;
+                            for (let [category, products] of Object.entries(PRODUCTS_DB)) {
+                                foundProduct = products.find(p => 
+                                    topResult.includes(p.name.toLowerCase())
+                                );
+                                if (foundProduct) break;
+                            }
+
+                            if (foundProduct) {
+                                resultDiv.innerHTML = `
+                                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                                        <p class="text-green-800 font-semibold mb-3">
+                                            ✅ Détecté: ${foundProduct.name}
+                                        </p>
+                                        <button data-add-recognized class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg transition">
+                                            Ajouter ${foundProduct.emoji} ${foundProduct.name}
+                                        </button>
+                                    </div>
+                                `;
+                                
+                                document.dataset.recognizedProduct = JSON.stringify(foundProduct);
+                            } else {
+                                resultDiv.innerHTML = `
+                                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                                        <p class="text-amber-800 font-semibold">
+                                            ⚠️ Détecté: ${results[0].label}
+                                        </p>
+                                        <p class="text-sm text-amber-700 mt-2">
+                                            Ajoutez l'article manuellement si ce n'est pas reconnu.
+                                        </p>
+                                    </div>
+                                `;
+                            }
+                        });
+                    });
+                });
+            }
+
+            initPhotoSearch(type, identifier) {
+                const fileInput = document.getElementById('direct-file-input');
+                const self = this;
+
+                if (!fileInput) return;
+
+                fileInput.addEventListener('change', async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+
+                    try {
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const photoData = reader.result;
+                            self.applyPhoto(type, identifier, photoData);
+                        };
+                        reader.readAsDataURL(file);
+                    } catch (err) {
+                        console.error('Erreur import fichier:', err);
+                        alert('Erreur lors de l\'import: ' + err.message);
+                    }
+                });
+
+                const modalOverlay = document.querySelector('.modal-overlay');
+                if (modalOverlay) {
+                    modalOverlay.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        modalOverlay.style.background = 'rgba(0, 0, 0, 0.7)';
+                    });
+
+                    modalOverlay.addEventListener('dragleave', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        modalOverlay.style.background = 'rgba(0, 0, 0, 0.5)';
+                    });
+
+                    modalOverlay.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        modalOverlay.style.background = 'rgba(0, 0, 0, 0.5)';
+                        
+                        const files = e.dataTransfer.files;
+                        if (files.length > 0 && files[0].type.startsWith('image/')) {
+                            const file = files[0];
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const photoData = reader.result;
+                                self.applyPhoto(type, identifier, photoData);
+                            };
+                            reader.readAsDataURL(file);
+                        }
+                    });
+                }
+            }
+
+            initCameraModal(type, identifier) {
+                const startBtn = document.getElementById('start-camera-btn');
+                const captureBtn = document.getElementById('capture-photo-btn');
+                const retakeBtn = document.getElementById('retake-photo-btn');
+                const confirmBtn = document.getElementById('confirm-photo-btn');
+                const fileInput = document.getElementById('camera-file-input');
+                const video = document.getElementById('camera-video');
+                const canvas = document.getElementById('camera-canvas');
+                const statusDiv = document.getElementById('camera-status');
+                const ctx = canvas ? canvas.getContext('2d') : null;
+
+                if (!video || !startBtn) {
+                    console.error('Éléments caméra non trouvés');
+                    return;
+                }
+
+                let stream = null;
+                const self = this;
+
+                const updateStatus = (msg) => {
+                    if (statusDiv) statusDiv.textContent = msg;
+                    console.log(msg);
+                };
+
+                if (fileInput) {
+                    fileInput.addEventListener('change', async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+
+                        try {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const img = new Image();
+                                img.onload = () => {
+                                    if (stream) {
+                                        stream.getTracks().forEach(track => track.stop());
+                                    }
+                                    
+                                    canvas.width = img.width;
+                                    canvas.height = img.height;
+                                    ctx.drawImage(img, 0, 0);
+                                    
+                                    document.getElementById('camera-section').style.display = 'none';
+                                    document.getElementById('preview-section').style.display = 'block';
+                                    updateStatus('Photo importée');
+                                };
+                                img.src = reader.result;
+                            };
+                            reader.readAsDataURL(file);
+                        } catch (err) {
+                            console.error('Erreur import fichier:', err);
+                            updateStatus('❌ Erreur: ' + err.message);
+                            alert('Erreur lors de l\'import: ' + err.message);
+                        }
+                    });
+                }
+
+                startBtn.addEventListener('click', async () => {
+                    try {
+                        updateStatus('Demande d\'accès à la caméra...');
+                        stream = await navigator.mediaDevices.getUserMedia({ 
+                            video: { 
+                                facingMode: 'environment',
+                                width: { ideal: 1280 },
+                                height: { ideal: 720 }
+                            } 
+                        });
+                        
+                        video.srcObject = stream;
+                        updateStatus('Caméra activée ✓');
+                        
+                        startBtn.style.display = 'none';
+                        captureBtn.style.display = 'block';
+                        
+                    } catch (err) {
+                        console.error('Erreur caméra:', err);
+                        
+                        let errorMsg = '';
+                        if (err.name === 'NotAllowedError') {
+                            errorMsg = 'Permission refusée. Allez dans les paramètres du navigateur pour autoriser la caméra.';
+                        } else if (err.name === 'NotFoundError') {
+                            errorMsg = 'Aucune caméra trouvée sur cet appareil.';
+                        } else if (err.name === 'NotReadableError') {
+                            errorMsg = 'La caméra est déjà utilisée par une autre application.';
+                        } else {
+                            errorMsg = err.message;
+                        }
+                        
+                        updateStatus('❌ ' + errorMsg);
+                        alert('❌ Erreur caméra:\n\n' + errorMsg + '\n\nUtilisez plutôt l\'option "Choisir une photo" ci-dessous.');
+                    }
+                });
+
+                if (captureBtn) {
+                    captureBtn.addEventListener('click', () => {
+                        try {
+                            if (canvas && ctx && video.videoWidth && video.videoHeight) {
+                                canvas.width = video.videoWidth;
+                                canvas.height = video.videoHeight;
+                                ctx.drawImage(video, 0, 0);
+                                
+                                if (stream) {
+                                    stream.getTracks().forEach(track => track.stop());
+                                    updateStatus('Caméra fermée');
+                                }
+                                
+                                document.getElementById('camera-section').style.display = 'none';
+                                document.getElementById('preview-section').style.display = 'block';
+                            } else {
+                                alert('Erreur: La vidéo n\'est pas encore prête. Réessayez.');
+                                updateStatus('Vidéo non prête');
+                            }
+                        } catch (err) {
+                            console.error('Erreur capture photo:', err);
+                            updateStatus('❌ Erreur capture: ' + err.message);
+                            alert('Erreur lors de la capture: ' + err.message);
+                        }
+                    });
+                }
+
+                if (retakeBtn) {
+                    retakeBtn.addEventListener('click', async () => {
+                        try {
+                            updateStatus('Réactivation de la caméra...');
+                            stream = await navigator.mediaDevices.getUserMedia({ 
+                                video: { 
+                                    facingMode: 'environment',
+                                    width: { ideal: 1280 },
+                                    height: { ideal: 720 }
+                                } 
+                            });
+                            video.srcObject = stream;
+                            updateStatus('Caméra réactivée ✓');
+                            
+                            document.getElementById('camera-section').style.display = 'block';
+                            document.getElementById('preview-section').style.display = 'none';
+                            startBtn.style.display = 'none';
+                            captureBtn.style.display = 'block';
+                        } catch (err) {
+                            console.error('Erreur caméra reprendre:', err);
+                            updateStatus('❌ Erreur: ' + err.message);
+                            alert('Erreur caméra: ' + err.message);
+                        }
+                    });
+                }
+
+                if (confirmBtn) {
+                    confirmBtn.addEventListener('click', () => {
+                        try {
+                            const photoData = canvas.toDataURL('image/jpeg', 0.9);
+                            self.applyPhoto(type, identifier, photoData);
+                            updateStatus('Photo appliquée ✓');
+                        } catch (err) {
+                            console.error('Erreur confirmation photo:', err);
+                            updateStatus('❌ Erreur: ' + err.message);
+                            alert('Erreur: ' + err.message);
+                        }
+                    });
+                }
+            }
+
+            applyPhoto(type, identifier, photoData) {
+                console.log('applyPhoto called:', type, identifier, photoData.substring(0, 50));
+                
+                if (type === 'category') {
+                    this.setCategoryPhoto(identifier, photoData);
+                    this.modal = null;
+                } else if (type === 'product') {
+                    const [categoryName, productId] = identifier.split('|');
+                    this.setProductPhoto(categoryName, productId, photoData);
+                    this.modal = null;
+                } else if (type === 'newProduct') {
+                    this.newProductPhoto = photoData;
+                    this.modal = { type: 'addProduct', categoryName: identifier };
+                }
+                
+                if (type !== 'newProduct') {
+                    alert('Photo sauvegardée ! ✓');
+                }
+                
+                this.render();
+            }
+
+            attachEventListeners() {
+                const searchInput = document.getElementById('search-input');
+
+                if (searchInput) {
+                    searchInput.addEventListener('input', (e) => {
+                        this.searchTerm = e.target.value;
+                        this.render();
+                    });
+
+                    searchInput.addEventListener('focus', () => {
+                        this.showSuggestions = true;
+                        this.render();
+                    });
+                }
+
+                // === LISTENERS POUR INPUTS/SELECTS (avant click) ===
+                
+                // Listener change pour les selects d'unité
+                document.addEventListener('change', (e) => {
+                    if (e.target.matches('select[data-change-unit]')) {
+                        const itemId = parseInt(e.target.dataset.changeUnit);
+                        const newUnit = e.target.value;
+                        this.changeUnit(itemId, newUnit);
+                    }
+                }, true); // Capture phase
+
+                // Listener input pour les inputs de quantité  
+                document.addEventListener('input', (e) => {
+                    if (e.target.matches('input[data-qty-input]')) {
+                        const itemId = parseInt(e.target.dataset.qtyInput);
+                        const quantity = parseInt(e.target.value) || 1;
+                        this.updateQuantity(itemId, quantity);
+                    }
+                }, true); // Capture phase
+
+                // === LISTENER CLICK ===
+                document.addEventListener('click', (e) => {
+                    // Toggle items
+                    if (e.target.closest('[data-toggle-item]')) {
+                        const id = parseInt(e.target.closest('[data-toggle-item]').dataset.toggleItem);
+                        this.toggleItem(id);
+                    }
+                    
+                    // Delete items
+                    if (e.target.closest('[data-delete-item]')) {
+                        const id = parseInt(e.target.closest('[data-delete-item]').dataset.deleteItem);
+                        this.deleteItem(id);
+                    }
+                    
+                    // Category filter
+                    if (e.target.closest('[data-category]')) {
+                        this.selectedCategory = e.target.closest('[data-category]').dataset.category;
+                        this.render();
+                    }
+                    
+                    // Add product from search
+                    if (e.target.closest('[data-add-product]')) {
+                        const productId = e.target.closest('[data-add-product]').dataset.addProduct;
+                        const product = this.findProduct(productId);
+                        if (product) this.addItem(product);
+                    }
+
+                    // Add product from category modal
+                    if (e.target.closest('[data-add-from-category]')) {
+                        const productId = e.target.closest('[data-add-from-category]').dataset.addFromCategory;
+                        const product = this.findProduct(productId);
+                        if (product) this.addItem(product);
+                    }
+
+                    // Show category modal
+                    if (e.target.closest('[data-show-category]')) {
+                        const category = e.target.closest('[data-show-category]').dataset.showCategory;
+                        this.showCategoryModal(category);
+                    }
+
+                    // Show modals
+                    if (e.target.closest('[data-show-custom]')) {
+                        this.showAddCustomModal();
+                    }
+                    if (e.target.closest('[data-show-scanner]')) {
+                        this.showScannerModal();
+                    }
+                    if (e.target.closest('[data-show-photo]')) {
+                        this.showPhotoModal();
+                    }
+
+                    // Edit name
+                    if (e.target.closest('[data-edit-name]')) {
+                        const newName = prompt('Votre nom:', this.userName);
+                        if (newName) this.saveName(newName);
+                    }
+
+                    // Close modal
+                    if (e.target.closest('[data-close-modal]')) {
+                        this.modal = null;
+                        this.render();
+                    }
+
+                    // Submit custom item
+                    if (e.target.closest('[data-submit-custom]')) {
+                        const nameInput = document.getElementById('custom-name');
+                        const emojiInput = document.getElementById('custom-emoji');
+                        const categoryInput = document.getElementById('custom-category');
+                        const unitInput = document.getElementById('custom-unit');
+                        const notesInput = document.getElementById('custom-notes');
+                        if (nameInput && nameInput.value.trim()) {
+                            const emojiValue = (emojiInput && emojiInput.value && emojiInput.value.trim()) ? emojiInput.value.trim() : '📦';
+                            const categoryValue = (categoryInput && categoryInput.value) ? categoryInput.value : 'Divers';
+                            const unitValue = (unitInput && unitInput.value) ? unitInput.value : 'pièce';
+                            const notesValue = (notesInput && notesInput.value) ? notesInput.value : '';
+                            this.addCustomItem(nameInput.value, emojiValue, categoryValue, notesValue, unitValue);
+                        }
+                    }
+
+                    // Add recognized product from photo
+                    if (e.target.closest('[data-add-recognized]')) {
+                        const productData = document.dataset.recognizedProduct;
+                        if (productData) {
+                            const product = JSON.parse(productData);
+                            this.addItem(product);
+                        }
+                    }
+
+                    // Edit item
+                    if (e.target.closest('[data-edit-item]')) {
+                        const itemId = parseInt(e.target.closest('[data-edit-item]').dataset.editItem);
+                        this.showEditItemModal(itemId);
+                    }
+
+                    // Save item
+                    if (e.target.closest('[data-save-item]')) {
+                        const itemId = parseInt(e.target.closest('[data-save-item]').dataset.saveItem);
+                        const nameInput = document.getElementById('edit-name');
+                        const emojiInput = document.getElementById('edit-emoji');
+                        const categoryInput = document.getElementById('edit-category');
+                        const unitInput = document.getElementById('edit-unit');
+                        const notesInput = document.getElementById('edit-notes');
+                        if (nameInput && nameInput.value.trim()) {
+                            const emojiValue = (emojiInput && emojiInput.value && emojiInput.value.trim()) ? emojiInput.value.trim() : '📦';
+                            const categoryValue = (categoryInput && categoryInput.value) ? categoryInput.value : 'Divers';
+                            const unitValue = (unitInput && unitInput.value) ? unitInput.value : 'pièce';
+                            const notesValue = (notesInput && notesInput.value) ? notesInput.value : '';
+                            this.editItem(itemId, nameInput.value, emojiValue, categoryValue, unitValue, notesValue);
+                            this.modal = null;
+                            this.render();
+                        }
+                    }
+
+                    // Manage categories
+                    if (e.target.closest('[data-manage-categories]')) {
+                        this.showManageCategoriesModal();
+                    }
+
+                    // Edit category
+                    if (e.target.closest('[data-edit-category]')) {
+                        const categoryName = e.target.closest('[data-edit-category]').dataset.editCategory;
+                        this.showEditCategoryModal(categoryName);
+                    }
+
+                    // Delete category
+                    if (e.target.closest('[data-delete-category]')) {
+                        const categoryName = e.target.closest('[data-delete-category]').dataset.deleteCategory;
+                        if (confirm(`Êtes-vous sûr de vouloir supprimer la catégorie "${categoryName}" ?`)) {
+                            this.deleteCategory(categoryName);
+                            this.modal = { type: 'manageCategories' };
+                            this.render();
+                        }
+                    }
+
+                    // Save category
+                    if (e.target.closest('[data-save-category]')) {
+                        const oldName = e.target.closest('[data-save-category]').dataset.saveCategory;
+                        const newNameInput = document.getElementById('cat-edit-name');
+                        const newEmojiInput = document.getElementById('cat-edit-emoji');
+                        const newPhotoInput = document.getElementById('cat-edit-photo');
+                        if (newNameInput && newNameInput.value.trim()) {
+                            const emojiValue = (newEmojiInput && newEmojiInput.value && newEmojiInput.value.trim()) ? newEmojiInput.value.trim() : '📦';
+                            const photoValue = (newPhotoInput && newPhotoInput.value && newPhotoInput.value.trim()) ? newPhotoInput.value.trim() : null;
+                            this.editCategory(oldName, newNameInput.value, emojiValue, photoValue);
+                            this.modal = null;
+                            this.render();
+                        }
+                    }
+
+                    // Clear category photo
+                    if (e.target.closest('[data-clear-cat-photo]')) {
+                        const categoryName = e.target.closest('[data-clear-cat-photo]').dataset.clearCatPhoto;
+                        this.setCategoryPhoto(categoryName, null);
+                    }
+
+                    // Add category
+                    if (e.target.closest('[data-add-category]')) {
+                        this.showAddCategoryModal();
+                    }
+
+                    // Submit add category
+                    if (e.target.closest('[data-submit-add-category]')) {
+                        const nameInput = document.getElementById('new-cat-name');
+                        const emojiInput = document.getElementById('new-cat-emoji');
+                        if (nameInput && nameInput.value.trim()) {
+                            const emojiValue = (emojiInput && emojiInput.value && emojiInput.value.trim()) ? emojiInput.value.trim() : '🏷️';
+                            CATEGORIES_DB[nameInput.value] = { icon: emojiValue, photo: null };
+                            PRODUCTS_DB[nameInput.value] = [];
+                            this.saveCategoriesDB();
+                            this.modal = null;
+                            this.render();
+                        }
+                    }
+
+                    // Manage products
+                    if (e.target.closest('[data-manage-products]')) {
+                        const categoryName = e.target.closest('[data-manage-products]').dataset.manageProducts;
+                        this.showManageProductsModal(categoryName);
+                    }
+
+                    // Add product modal
+                    if (e.target.closest('[data-add-product-modal]')) {
+                        const categoryName = e.target.closest('[data-add-product-modal]').dataset.addProductModal;
+                        this.showAddProductModal(categoryName);
+                    }
+
+                    // Submit new product
+                    if (e.target.closest('[data-submit-new-product]')) {
+                        const categoryName = e.target.closest('[data-submit-new-product]').dataset.submitNewProduct;
+                        const nameInput = document.getElementById('new-prod-name');
+                        const emojiInput = document.getElementById('new-prod-emoji');
+                        
+                        if (nameInput && nameInput.value.trim()) {
+                            const name = nameInput.value.trim();
+                            const emoji = (emojiInput && emojiInput.value.trim()) ? emojiInput.value.trim() : '📦';
+                            const photo = this.newProductPhoto || null;
+                            
+                            this.addProductToDatabase(name, emoji, categoryName, photo);
+                            this.newProductPhoto = null;
+                        } else {
+                            alert('Veuillez entrer un nom de produit');
+                        }
+                    }
+
+                    // Search photo for new product
+                    if (e.target.closest('[data-search-photo-newprod]')) {
+                        const categoryName = e.target.closest('[data-search-photo-newprod]').dataset.searchPhotoNewprod;
+                        this.modal = { type: 'addProduct', categoryName: categoryName, photoMode: 'searchPhotos' };
+                        this.render();
+                        setTimeout(() => this.initPhotoSearch('newProduct', categoryName), 500);
+                    }
+
+                    // Camera photo for new product
+                    if (e.target.closest('[data-camera-photo-newprod]')) {
+                        const categoryName = e.target.closest('[data-camera-photo-newprod]').dataset.cameraPhotoNewprod;
+                        this.modal = { type: 'addProduct', categoryName: categoryName, photoMode: 'cameraPhoto' };
+                        this.render();
+                        setTimeout(() => this.initCameraModal('newProduct', categoryName), 500);
+                    }
+
+                    // Edit product
+                    if (e.target.closest('[data-edit-product]')) {
+                        const data = e.target.closest('[data-edit-product]').dataset.editProduct.split('|');
+                        const categoryName = data[0];
+                        const productId = data[1];
+                        const product = PRODUCTS_DB[categoryName].find(p => p.id === productId);
+                        if (product) {
+                            this.modal = { type: 'editProduct', categoryName: categoryName, product: product };
+                            this.render();
+                        }
+                    }
+
+                    // Delete product
+                    if (e.target.closest('[data-delete-product]')) {
+                        if (confirm('Êtes-vous sûr de vouloir supprimer ce produit? (Les articles dans la liste seront aussi supprimés)')) {
+                            const data = e.target.closest('[data-delete-product]').dataset.deleteProduct.split('|');
+                            const categoryName = data[0];
+                            const productId = data[1];
+                            this.deleteProduct(categoryName, productId);
+                            this.modal = { type: 'manageProducts', categoryName: categoryName };
+                            this.render();
+                        }
+                    }
+
+                    // Save product
+                    if (e.target.closest('[data-save-product]')) {
+                        const data = e.target.closest('[data-save-product]').dataset.saveProduct.split('|');
+                        const categoryName = data[0];
+                        const productId = data[1];
+                        const nameInput = document.getElementById('prod-edit-name');
+                        const emojiInput = document.getElementById('prod-edit-emoji');
+                        const categoryInput = document.getElementById('prod-edit-category');
+                        
+                        if (nameInput && nameInput.value.trim()) {
+                            const emojiValue = (emojiInput && emojiInput.value && emojiInput.value.trim()) ? emojiInput.value.trim() : '📦';
+                            const newCategory = categoryInput ? categoryInput.value : categoryName;
+                            
+                            this.editProduct(categoryName, productId, nameInput.value, emojiValue);
+                            
+                            if (newCategory !== categoryName) {
+                                this.moveProductToCategory(categoryName, newCategory, productId);
+                                this.modal = { type: 'manageProducts', categoryName: newCategory };
+                            } else {
+                                this.modal = { type: 'manageProducts', categoryName: categoryName };
+                            }
+                            this.render();
+                        }
+                    }
+
+                    // Clear product photo
+                    if (e.target.closest('[data-clear-prod-photo]')) {
+                        const data = e.target.closest('[data-clear-prod-photo]').dataset.clearProdPhoto.split('|');
+                        const categoryName = data[0];
+                        const productId = data[1];
+                        this.setProductPhoto(categoryName, productId, null);
+                        this.modal = { type: 'editProduct', categoryName: categoryName, product: PRODUCTS_DB[categoryName].find(p => p.id === productId) };
+                        this.render();
+                    }
+
+                    // Increase quantity
+                    if (e.target.closest('[data-increase-qty]')) {
+                        const itemId = parseInt(e.target.closest('[data-increase-qty]').dataset.increaseQty);
+                        this.increaseQuantity(itemId);
+                    }
+
+                    // Decrease quantity
+                    if (e.target.closest('[data-decrease-qty]')) {
+                        const itemId = parseInt(e.target.closest('[data-decrease-qty]').dataset.decreaseQty);
+                        this.decreaseQuantity(itemId);
+                    }
+
+                    // Search photo for category
+                    if (e.target.closest('[data-search-photo-cat]')) {
+                        const categoryName = e.target.closest('[data-search-photo-cat]').dataset.searchPhotoCat;
+                        this.modal = { type: 'editCategory', categoryName: categoryName, photoMode: 'searchPhotos' };
+                        this.render();
+                        setTimeout(() => this.initPhotoSearch('category', categoryName), 500);
+                    }
+
+                    // Camera photo for category
+                    if (e.target.closest('[data-camera-photo-cat]')) {
+                        const categoryName = e.target.closest('[data-camera-photo-cat]').dataset.cameraPhotoCat;
+                        this.modal = { type: 'editCategory', categoryName: categoryName, photoMode: 'cameraPhoto' };
+                        this.render();
+                        setTimeout(() => this.initCameraModal('category', categoryName), 500);
+                    }
+
+                    // Search photo for product
+                    if (e.target.closest('[data-search-photo-prod]')) {
+                        const data = e.target.closest('[data-search-photo-prod]').dataset.searchPhotoProd.split('|');
+                        const categoryName = data[0];
+                        const productId = data[1];
+                        this.modal = { type: 'editProduct', categoryName: categoryName, product: PRODUCTS_DB[categoryName].find(p => p.id === productId), photoMode: 'searchPhotos' };
+                        this.render();
+                        setTimeout(() => this.initPhotoSearch('product', `${categoryName}|${productId}`), 500);
+                    }
+
+                    // Camera photo for product
+                    if (e.target.closest('[data-camera-photo-prod]')) {
+                        const data = e.target.closest('[data-camera-photo-prod]').dataset.cameraPhotoProd.split('|');
+                        const categoryName = data[0];
+                        const productId = data[1];
+                        this.modal = { type: 'editProduct', categoryName: categoryName, product: PRODUCTS_DB[categoryName].find(p => p.id === productId), photoMode: 'cameraPhoto' };
+                        this.render();
+                        setTimeout(() => this.initCameraModal('product', `${categoryName}|${productId}`), 500);
+                    }
+
+                    // Use photo URL
+                    if (e.target.closest('#use-photo-url-btn')) {
+                        const btn = e.target.closest('#use-photo-url-btn');
+                        const photoUrl = document.getElementById('photo-url-input').value.trim();
+                        if (photoUrl) {
+                            const type = btn.dataset.type;
+                            const identifier = btn.dataset.id;
+                            this.applyPhoto(type, identifier, photoUrl);
+                        }
+                    }
+
+                    // Logout button
+                    if (e.target.closest('[data-logout]')) {
+                        this.logout();
+                    }
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape' && this.modal) {
+                        this.modal = null;
+                        this.render();
+                    }
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('#search-input') && !e.target.closest('#suggestions')) {
+                        this.showSuggestions = false;
+                        if (!this.modal) this.render();
+                    }
+                });
+            }
+
+            // === RENDU DES MODALES === (garder le code original)
+            renderCategoryModal() {
+                const category = this.modal.category;
+                const products = PRODUCTS_DB[category] || [];
+                const catData = CATEGORIES_DB[category];
+
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-2xl font-bold text-slate-900">
+                                    ${catData.photo ? `<img src="${catData.photo}" alt="${category}" class="w-8 h-8 object-cover rounded inline-block mr-2">` : `<span class="text-2xl inline-block mr-2">${catData.icon}</span>`}
+                                    ${category}
+                                </h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4">
+                                ${products.length === 0 ? `
+                                    <div class="text-center py-8 text-slate-600">
+                                        <p>Aucun produit dans cette catégorie</p>
+                                    </div>
+                                ` : `
+                                    <div class="product-grid">
+                                        ${products.map(product => `
+                                            <button data-add-from-category="${product.id}" class="product-btn flex flex-col items-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 border border-slate-200 rounded-lg">
+                                                ${product.photo ? `
+                                                    <img src="${product.photo}" alt="${product.name}" class="w-10 h-10 object-cover rounded">
+                                                ` : `
+                                                    <span class="text-2xl">${product.emoji}</span>
+                                                `}
+                                                <span class="text-xs font-medium text-slate-700 text-center line-clamp-2">${product.name}</span>
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                `}
+                            </div>
+                            <div class="sticky bottom-0 bg-white border-t border-slate-200 p-4">
+                                <button data-manage-products="${category}" class="w-full bg-slate-500 hover:bg-slate-600 text-white font-semibold py-2 rounded-lg transition">
+                                    ⚙️ Gérer les produits
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderCustomModal() {
+                const categories = Object.keys(PRODUCTS_DB);
+                const units = ['pièce', 'grammes', 'kilo', 'millilitres', 'litre'];
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Ajouter un article</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Nom du produit</label>
+                                    <input id="custom-name" type="text" placeholder="Ex: Nutella, Jambon..." 
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Catégorie</label>
+                                    <select id="custom-category" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        <option value="Divers">Divers</option>
+                                        ${categories.filter(cat => cat !== 'Divers').map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Emoji</label>
+                                    <input id="custom-emoji" type="text" placeholder="📦" maxlength="10" value="📦"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xl text-center">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Unité</label>
+                                    <select id="custom-unit" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        ${units.map(u => `<option value="${u}" ${u === 'pièce' ? 'selected' : ''}>${u}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Commentaires</label>
+                                    <textarea id="custom-notes" rows="2" placeholder="Ex: Sans sucre, Bio, Frais..."
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+                                </div>
+                                <button data-submit-custom class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 rounded-lg transition">
+                                    ✓ Ajouter l'article
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderEditItemModal(item) {
+                const categories = Object.keys(PRODUCTS_DB);
+                const units = ['pièce', 'grammes', 'kilo', 'millilitres', 'litre'];
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Modifier l'article</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Nom</label>
+                                    <input id="edit-name" type="text" value="${item.name}"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Catégorie</label>
+                                    <select id="edit-category" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        ${categories.map(cat => `<option value="${cat}" ${item.category === cat ? 'selected' : ''}>${cat}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Emoji</label>
+                                    <input id="edit-emoji" type="text" value="${item.emoji}" maxlength="10"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xl text-center">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Unité</label>
+                                    <select id="edit-unit" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        ${units.map(u => `<option value="${u}" ${item.unit === u ? 'selected' : ''}>${u}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Commentaires</label>
+                                    <textarea id="edit-notes" rows="2" placeholder="Ex: Sans sucre, Bio, Frais..."
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${item.notes || ''}</textarea>
+                                </div>
+                                <button data-save-item="${item.id}" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg transition">
+                                    ✓ Enregistrer
+                                </button>
+                                <button data-delete-item="${item.id}" class="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-2 rounded-lg transition">
+                                    🗑️ Supprimer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderManageProductsModal(categoryName) {
+                const products = PRODUCTS_DB[categoryName] || [];
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Gérer les produits - ${CATEGORIES_DB[categoryName].icon} ${categoryName}</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-2">
+                                ${products.length === 0 ? `
+                                    <div class="text-center py-8 text-slate-600">
+                                        <p>Aucun produit dans cette catégorie</p>
+                                    </div>
+                                ` : `
+                                    ${products.map(product => `
+                                        <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 group hover:bg-blue-50 flex-wrap">
+                                            ${product.photo ? `
+                                                <img src="${product.photo}" alt="${product.name}" class="w-8 h-8 object-cover rounded flex-shrink-0">
+                                            ` : `
+                                                <span class="text-2xl">${product.emoji}</span>
+                                            `}
+                                            <div class="flex-grow">
+                                                <div class="font-semibold text-slate-900">${product.name}</div>
+                                                ${product.isCustom ? '<div class="text-xs text-blue-600">★ Personnalisé</div>' : ''}
+                                            </div>
+                                            <button data-edit-product="${categoryName}|${product.id}" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition">
+                                                ✏️
+                                            </button>
+                                            <button data-delete-product="${categoryName}|${product.id}" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition">
+                                                🗑️
+                                            </button>
+                                        </div>
+                                    `).join('')}
+                                `}
+                            </div>
+                            <div class="sticky bottom-0 bg-white border-t border-slate-200 p-4">
+                                <button data-add-product-modal="${categoryName}" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 rounded-lg transition">
+                                    + Créer un produit
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderEditProductModal(categoryName, product) {
+                const mode = this.modal.photoMode || 'edit';
+                
+                if (mode === 'searchPhotos') {
+                    return this.renderSearchPhotosModal('product', `${categoryName}|${product.id}`);
+                } else if (mode === 'cameraPhoto') {
+                    return this.renderCameraPhotoModal('product', `${categoryName}|${product.id}`);
+                }
+                
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Modifier le produit</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Nom</label>
+                                    <input id="prod-edit-name" type="text" value="${product.name}"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Emoji</label>
+                                    <input id="prod-edit-emoji" type="text" value="${product.emoji}" maxlength="10"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xl text-center">
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Catégorie</label>
+                                    <select id="prod-edit-category" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        ${Object.keys(CATEGORIES_DB).map(cat => `
+                                            <option value="${cat}" ${cat === categoryName ? 'selected' : ''}>${cat}</option>
+                                        `).join('')}
+                                    </select>
+                                </div>
+                                
+                                <div class="border-t border-slate-200 pt-4">
+                                    <label class="block text-sm font-semibold text-slate-700 mb-3">Photo</label>
+                                    <div class="flex gap-2">
+                                        <button data-search-photo-prod="${categoryName}|${product.id}" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-sm py-2 rounded-lg transition font-medium">
+                                            📁 Photo
+                                        </button>
+                                        <button data-camera-photo-prod="${categoryName}|${product.id}" class="flex-1 bg-green-500 hover:bg-green-600 text-white text-sm py-2 rounded-lg transition font-medium">
+                                            📷 Caméra
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                ${product.photo ? `
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-700 mb-2">Aperçu actuel</p>
+                                        <img src="${product.photo}" alt="${product.name}" class="w-full h-32 object-cover rounded-lg border border-slate-200">
+                                        <button data-clear-prod-photo="${categoryName}|${product.id}" class="w-full mt-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm py-1 rounded transition">
+                                            Supprimer la photo
+                                        </button>
+                                    </div>
+                                ` : ''}
+                                <button data-save-product="${categoryName}|${product.id}" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg transition">
+                                    ✓ Enregistrer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderAddProductModal(categoryName) {
+                const units = ['pièce', 'grammes', 'kilo', 'millilitres', 'litre'];
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Créer un produit</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Nom du produit</label>
+                                    <input id="new-prod-name" type="text" placeholder="Ex: Groseilles..."
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Emoji</label>
+                                    <input id="new-prod-emoji" type="text" placeholder="📦" maxlength="10" value="📦"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xl text-center">
+                                </div>
+                                
+                                <div class="border-t border-slate-200 pt-4">
+                                    <label class="block text-sm font-semibold text-slate-700 mb-3">Photo</label>
+                                    <div class="flex gap-2">
+                                        <button data-search-photo-newprod="${categoryName}" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-sm py-2 rounded-lg transition font-medium">
+                                            📁 Photo
+                                        </button>
+                                        <button data-camera-photo-newprod="${categoryName}" class="flex-1 bg-green-500 hover:bg-green-600 text-white text-sm py-2 rounded-lg transition font-medium">
+                                            📷 Caméra
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                ${this.newProductPhoto ? `
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-700 mb-2">Aperçu photo</p>
+                                        <img src="${this.newProductPhoto}" alt="Aperçu" class="w-full h-32 object-cover rounded-lg border border-slate-200">
+                                        <button type="button" onclick="app.newProductPhoto = null; app.render();" class="w-full mt-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm py-1 rounded transition">
+                                            Supprimer la photo
+                                        </button>
+                                    </div>
+                                ` : ''}
+
+                                <button data-submit-new-product="${categoryName}" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg transition">
+                                    ✓ Créer le produit
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderManageCategoriesModal() {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Gérer les catégories</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-3">
+                                ${Object.entries(CATEGORIES_DB).map(([name, data]) => `
+                                    <div class="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 group hover:bg-blue-50">
+                                        ${data.photo ? `
+                                            <img src="${data.photo}" alt="${name}" class="w-8 h-8 object-cover rounded">
+                                        ` : `
+                                            <span class="text-2xl">${data.icon}</span>
+                                        `}
+                                        <div class="flex-grow">
+                                            <div class="font-semibold text-slate-900">${name}</div>
+                                            <div class="text-xs text-slate-500">${(PRODUCTS_DB[name] || []).length} produit(s)</div>
+                                        </div>
+                                        <button data-edit-category="${name}" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition opacity-0 group-hover:opacity-100">
+                                            ✏️
+                                        </button>
+                                        <button data-delete-category="${name}" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition opacity-0 group-hover:opacity-100">
+                                            🗑️
+                                        </button>
+                                    </div>
+                                `).join('')}
+                                <button data-add-category class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 rounded-lg transition mt-4">
+                                    + Ajouter une catégorie
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderEditCategoryModal(categoryName) {
+                const catData = CATEGORIES_DB[categoryName];
+                const mode = this.modal.photoMode || 'edit';
+                
+                if (mode === 'searchPhotos') {
+                    return this.renderSearchPhotosModal('category', categoryName);
+                } else if (mode === 'cameraPhoto') {
+                    return this.renderCameraPhotoModal('category', categoryName);
+                }
+                
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Modifier la catégorie</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Nom</label>
+                                    <input id="cat-edit-name" type="text" value="${categoryName}"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Emoji</label>
+                                    <input id="cat-edit-emoji" type="text" value="${catData.icon}" maxlength="10"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xl text-center">
+                                </div>
+                                
+                                <div class="border-t border-slate-200 pt-4">
+                                    <label class="block text-sm font-semibold text-slate-700 mb-3">Photo</label>
+                                    <div class="flex gap-2">
+                                        <button data-search-photo-cat="${categoryName}" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white text-sm py-2 rounded-lg transition font-medium">
+                                            📁 Photo
+                                        </button>
+                                        <button data-camera-photo-cat="${categoryName}" class="flex-1 bg-green-500 hover:bg-green-600 text-white text-sm py-2 rounded-lg transition font-medium">
+                                            📷 Caméra
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                ${catData.photo ? `
+                                    <div>
+                                        <p class="text-xs font-semibold text-slate-700 mb-2">Aperçu actuel</p>
+                                        <img src="${catData.photo}" alt="${categoryName}" class="w-full h-32 object-cover rounded-lg border border-slate-200">
+                                        <button data-clear-cat-photo="${categoryName}" class="w-full mt-2 bg-red-100 hover:bg-red-200 text-red-700 text-sm py-1 rounded transition">
+                                            Supprimer la photo
+                                        </button>
+                                    </div>
+                                ` : ''}
+                                <button data-save-category="${categoryName}" class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg transition">
+                                    ✓ Enregistrer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderAddCategoryModal() {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">Ajouter une catégorie</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Nom</label>
+                                    <input id="new-cat-name" type="text" placeholder="Ex: Bio, Surgelés..."
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-slate-700 mb-2">Emoji</label>
+                                    <input id="new-cat-emoji" type="text" placeholder="🏷️" maxlength="10" value="🏷️"
+                                        class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-xl text-center">
+                                </div>
+                                <button data-submit-add-category class="w-full bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg transition">
+                                    ✓ Créer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderScannerModal() {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">📱 Scanner Code EAN</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4">
+                                ${this.modal.message ? `
+                                    <div class="text-center py-8">
+                                        <div class="text-4xl mb-2">${this.modal.message.includes('✅') ? '✅' : '❌'}</div>
+                                        <p class="text-slate-900 font-semibold">${this.modal.message}</p>
+                                    </div>
+                                ` : `
+                                    <video id="video-scanner" class="w-full rounded-lg mb-4" style="max-height: 300px;"></video>
+                                    <p class="text-sm text-slate-600 text-center">
+                                        Pointez vers le code-barres de l'emballage
+                                    </p>
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderPhotoModal() {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">📸 Reconnaître via photo</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <label class="block">
+                                    <input id="photo-input" type="file" accept="image/*" class="hidden">
+                                    <div class="px-4 py-8 border-2 border-dashed border-slate-300 rounded-lg text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition">
+                                        <div class="text-3xl mb-2">📷</div>
+                                        <p class="font-semibold text-slate-900">Cliquez pour choisir une photo</p>
+                                        <p class="text-xs text-slate-500">ou photographiez l'emballage</p>
+                                    </div>
+                                </label>
+                                <img id="photo-preview" style="display: none;" class="w-full rounded-lg">
+                                <canvas id="canvas-photo" style="display: none;"></canvas>
+                                <div id="recognition-result"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderSearchPhotosModal(type, identifier) {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">📁 Importer une photo</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <p class="text-sm text-slate-700">Choisissez une photo depuis votre appareil :</p>
+                                
+                                <label class="block cursor-pointer">
+                                    <input id="direct-file-input" type="file" accept="image/*" class="hidden">
+                                    <div class="px-4 py-8 border-2 border-dashed border-slate-300 rounded-lg text-center hover:border-blue-500 hover:bg-blue-50 transition">
+                                        <div class="text-4xl mb-2">📷</div>
+                                        <p class="font-semibold text-slate-900">Cliquez pour choisir une photo</p>
+                                        <p class="text-xs text-slate-500 mt-1">ou glissez-déposez une image</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderCameraPhotoModal(type, identifier) {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">📷 Prendre ou importer une photo</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4">
+                                <div id="camera-section" class="space-y-4">
+                                    <div style="background-color: #000; border-radius: 8px; overflow: hidden;">
+                                        <video id="camera-video" autoplay playsinline muted class="w-full" style="display: block; height: 300px; object-fit: cover;"></video>
+                                    </div>
+                                    <p id="camera-status" class="text-xs text-slate-600 text-center">En attente...</p>
+                                    <div class="flex gap-2">
+                                        <button id="start-camera-btn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg transition font-medium">
+                                            📷 Caméra
+                                        </button>
+                                        <button id="capture-photo-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg transition font-medium" style="display: none;">
+                                            Capture
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="border-t border-slate-200 pt-4">
+                                        <label class="block text-sm font-semibold text-slate-700 mb-2">Ou importer une photo</label>
+                                        <label class="block cursor-pointer">
+                                            <input id="camera-file-input" type="file" accept="image/*" class="hidden">
+                                            <div class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 rounded-lg text-center transition text-sm font-medium">
+                                                📁 Choisir une photo
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="preview-section" style="display: none;" class="space-y-4">
+                                    <canvas id="camera-canvas" class="w-full rounded-lg border border-slate-200" style="display: block; height: 300px;"></canvas>
+                                    <div class="flex gap-2">
+                                        <button id="retake-photo-btn" class="flex-1 bg-slate-500 hover:bg-slate-600 text-white py-2 rounded-lg transition">
+                                            Reprendre
+                                        </button>
+                                        <button id="confirm-photo-btn" data-type="${type}" data-id="${identifier}" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg transition font-medium">
+                                            ✓ Confirmer
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderSearchPhotosModal(type, identifier) {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">📁 Importer une photo</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4 space-y-4">
+                                <p class="text-sm text-slate-700">Choisissez une photo depuis votre ordinateur :</p>
+                                
+                                <label class="block cursor-pointer">
+                                    <input id="direct-file-input" type="file" accept="image/*" class="hidden">
+                                    <div class="px-4 py-8 border-2 border-dashed border-slate-300 rounded-lg text-center hover:border-blue-500 hover:bg-blue-50 transition">
+                                        <div class="text-4xl mb-2">📷</div>
+                                        <p class="font-semibold text-slate-900">Cliquez pour choisir une photo</p>
+                                        <p class="text-xs text-slate-500 mt-1">ou glissez-déposez une image</p>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderCameraPhotoModal(type, identifier) {
+                return `
+                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
+                            <div class="border-b border-slate-200 p-4 flex justify-between items-center">
+                                <h2 class="text-xl font-bold text-slate-900">📷 Prendre ou importer une photo</h2>
+                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
+                            </div>
+                            <div class="p-4">
+                                <div id="camera-section" class="space-y-4">
+                                    <div style="background-color: #000; border-radius: 8px; overflow: hidden;">
+                                        <video id="camera-video" autoplay playsinline muted class="w-full" style="display: block; height: 300px; object-fit: cover;"></video>
+                                    </div>
+                                    <p id="camera-status" class="text-xs text-slate-600 text-center">En attente...</p>
+                                    <div class="flex gap-2">
+                                        <button id="start-camera-btn" class="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg transition font-medium">
+                                            📷 Caméra
+                                        </button>
+                                        <button id="capture-photo-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg transition font-medium" style="display: none;">
+                                            Capture
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="border-t border-slate-200 pt-4">
+                                        <label class="block text-sm font-semibold text-slate-700 mb-2">Ou importer une photo</label>
+                                        <label class="block cursor-pointer">
+                                            <input id="camera-file-input" type="file" accept="image/*" class="hidden">
+                                            <div class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 rounded-lg text-center transition text-sm font-medium">
+                                                📁 Choisir une photo
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div id="preview-section" style="display: none;" class="space-y-4">
+                                    <canvas id="camera-canvas" class="w-full rounded-lg border border-slate-200" style="display: block; height: 300px;"></canvas>
+                                    <div class="flex gap-2">
+                                        <button id="retake-photo-btn" class="flex-1 bg-slate-500 hover:bg-slate-600 text-white py-2 rounded-lg transition">
+                                            Reprendre
+                                        </button>
+                                        <button id="confirm-photo-btn" data-type="${type}" data-id="${identifier}" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg transition font-medium">
+                                            ✓ Confirmer
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            render() {
+                if (!this.currentUser) {
+                    this.showAuthScreen();
+                    return;
+                }
+
+                const categories = Object.keys(CATEGORIES_DB);
+                const completedCount = this.items.filter(i => i.completed).length;
+                const displayItems = this.getDisplayItems();
+
+                let modalHtml = '';
+                if (this.modal) {
+                    if (this.modal.type === 'category') {
+                        modalHtml = this.renderCategoryModal();
+                    } else if (this.modal.type === 'custom') {
+                        modalHtml = this.renderCustomModal();
+                    } else if (this.modal.type === 'scanner') {
+                        modalHtml = this.renderScannerModal();
+                    } else if (this.modal.type === 'photo') {
+                        modalHtml = this.renderPhotoModal();
+                    } else if (this.modal.type === 'editItem') {
+                        modalHtml = this.renderEditItemModal(this.modal.item);
+                    } else if (this.modal.type === 'manageCategories') {
+                        modalHtml = this.renderManageCategoriesModal();
+                    } else if (this.modal.type === 'editCategory') {
+                        modalHtml = this.renderEditCategoryModal(this.modal.categoryName);
+                    } else if (this.modal.type === 'addCategory') {
+                        modalHtml = this.renderAddCategoryModal();
+                    } else if (this.modal.type === 'manageProducts') {
+                        modalHtml = this.renderManageProductsModal(this.modal.categoryName);
+                    } else if (this.modal.type === 'editProduct') {
+                        modalHtml = this.renderEditProductModal(this.modal.categoryName, this.modal.product);
+                    } else if (this.modal.type === 'addProduct') {
+                        const mode = this.modal.photoMode || 'edit';
+                        
+                        if (mode === 'searchPhotos') {
+                            modalHtml = this.renderSearchPhotosModal('newProduct', this.modal.categoryName);
+                        } else if (mode === 'cameraPhoto') {
+                            modalHtml = this.renderCameraPhotoModal('newProduct', this.modal.categoryName);
+                        } else {
+                            modalHtml = this.renderAddProductModal(this.modal.categoryName);
+                        }
+                    }
+                }
+
+                const html = `
+                    <!-- Header simplifié -->
+                    <div class="sticky top-0 z-40 bg-white shadow-sm border-b border-slate-200">
+                        <div class="max-w-4xl mx-auto px-4 py-4">
+                            <div class="flex items-center justify-between mb-6">
+                                <div class="flex items-center gap-3">
+                                    <div class="text-3xl">🛒</div>
+                                    <div>
+                                        <h1 class="text-2xl font-bold text-slate-900">Ma Liste</h1>
+                                        <p class="text-sm text-slate-600">
+                                            ${completedCount}/${this.items.length} articles récoltés
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button data-edit-name class="text-sm px-3 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 transition">
+                                        ${this.userName}
+                                    </button>
+                                    <button data-show-custom class="text-sm px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition font-semibold">
+                                        + Ajouter
+                                    </button>
+                                    <button data-logout class="text-sm px-3 py-1 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg transition">
+                                        Déconnexion
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Catégories principales -->
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                ${categories.map(cat => {
+                                    const catData = CATEGORIES_DB[cat];
+                                    return `
+                                        <button data-show-category="${cat}" class="py-3 px-3 bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 text-slate-900 rounded-lg font-semibold transition border border-blue-200 hover:border-blue-400 relative overflow-hidden h-24 flex flex-col justify-center items-center">
+                                            ${catData.photo ? `
+                                                <img src="${catData.photo}" alt="${cat}" class="absolute inset-0 w-full h-full object-cover opacity-30">
+                                            ` : ''}
+                                            <div class="text-2xl mb-1 relative z-10">${catData.icon}</div>
+                                            <div class="font-bold text-sm relative z-10 text-center">${cat}</div>
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+
+                            <!-- Bouton gestion catégories -->
+                            <button data-manage-categories class="w-full mt-4 py-2 px-4 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold rounded-lg transition">
+                                ⚙️ Gérer les catégories
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Contenu principal -->
+                    <div class="max-w-4xl mx-auto px-4 py-6 pb-20">
+                        ${this.items.length === 0 ? `
+                            <div class="text-center py-12">
+                                <div class="text-5xl mb-4">📝</div>
+                                <h2 class="text-xl font-semibold text-slate-900 mb-2">Votre liste est vide</h2>
+                                <p class="text-slate-600">Cliquez sur une catégorie ou ajoutez un article!</p>
+                            </div>
+                        ` : `
+                            <div class="space-y-4">
+                                <!-- Articles groupés par catégorie -->
+                                ${(() => {
+                                    const incompleteItems = displayItems.filter(item => !item.completed);
+                                    if (incompleteItems.length === 0) return '';
+                                    
+                                    const groupedItems = this.groupItemsByCategory(incompleteItems);
+                                    return groupedItems.map(group => `
+                                        <div>
+                                            <!-- Titre de la catégorie (Rayon) -->
+                                            <div class="sticky top-20 bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-3 rounded-lg mb-3 shadow-md flex items-center gap-2 z-20">
+                                                ${(() => {
+                                                    const catData = CATEGORIES_DB[group.category];
+                                                    if (catData.photo) {
+                                                        return `<img src="${catData.photo}" alt="${group.category}" class="w-8 h-8 object-cover rounded">`;
+                                                    } else {
+                                                        return `<span class="text-2xl">${catData.icon}</span>`;
+                                                    }
+                                                })()}
+                                                <h3 class="text-lg font-bold">${group.category}</h3>
+                                                <span class="ml-auto text-sm font-semibold bg-white bg-opacity-20 px-2 py-1 rounded">${group.items.length} article(s)</span>
+                                            </div>
+                                            <!-- Articles de la catégorie -->
+                                            <div class="space-y-2 mb-6">
+                                                ${group.items.map(item => `
+                                                    <div class="flex flex-col gap-2 p-4 bg-white rounded-lg border border-slate-200 hover:border-blue-300 hover:shadow-md transition group">
+                                                        <div class="flex items-center gap-3">
+                                                            <button data-toggle-item="${item.id}" class="flex-shrink-0 text-slate-400 hover:text-blue-500 transition">
+                                                                ⭕
+                                                            </button>
+                                                            ${item.photo ? `
+                                                                <img src="${item.photo}" alt="${item.name}" class="w-8 h-8 object-cover rounded flex-shrink-0">
+                                                            ` : `
+                                                                <span class="emoji">${item.emoji}</span>
+                                                            `}
+                                                            <div class="flex-grow">
+                                                                <div class="font-medium text-slate-900">${item.name}</div>
+                                                                <div class="text-xs text-slate-500">
+                                                                    Ajouté par ${item.addedBy}
+                                                                </div>
+                                                            </div>
+                                                            <!-- Contrôles de quantité et unité -->
+                                                            <div class="flex-shrink-0 flex items-center gap-1 bg-slate-100 rounded-lg px-2 py-1">
+                                                                <button data-decrease-qty="${item.id}" class="text-slate-600 hover:text-slate-900 font-bold text-sm">−</button>
+                                                                <input type="number" data-qty-input="${item.id}" min="1" value="${item.quantity || 1}" 
+                                                                    class="w-8 text-center bg-white border border-slate-300 rounded px-1 py-0 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                                                <button data-increase-qty="${item.id}" class="text-slate-600 hover:text-slate-900 font-bold text-sm">+</button>
+                                                                <select data-change-unit="${item.id}" class="bg-white border border-slate-300 rounded px-1 py-0 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                                                    <option value="pièce" ${item.unit === 'pièce' ? 'selected' : ''}>pièce</option>
+                                                                    <option value="grammes" ${item.unit === 'grammes' ? 'selected' : ''}>g</option>
+                                                                    <option value="kilo" ${item.unit === 'kilo' ? 'selected' : ''}>kg</option>
+                                                                    <option value="millilitres" ${item.unit === 'millilitres' ? 'selected' : ''}>ml</option>
+                                                                    <option value="litre" ${item.unit === 'litre' ? 'selected' : ''}>L</option>
+                                                                </select>
+                                                            </div>
+                                                            <button data-edit-item="${item.id}" class="flex-shrink-0 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition">
+                                                                ✏️
+                                                            </button>
+                                                            <button data-delete-item="${item.id}" class="flex-shrink-0 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                                                                🗑️
+                                                            </button>
+                                                        </div>
+                                                        ${item.notes ? `<div class="text-xs text-slate-600 italic ml-8">💬 ${item.notes}</div>` : ''}
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    `).join('');
+                                })()}
+                                
+                                <!-- Articles complétés (groupés par catégorie) -->
+                                ${(() => {
+                                    const completedItems = displayItems.filter(item => item.completed);
+                                    if (completedItems.length === 0) return '';
+                                    
+                                    return `
+                                        <div class="pt-6 border-t-2 border-slate-300 mt-8">
+                                            <div class="flex items-center gap-2 mb-4">
+                                                <span class="text-2xl">✅</span>
+                                                <h2 class="text-xl font-bold text-slate-900">Articles récoltés (${completedItems.length})</h2>
+                                            </div>
+                                            <div class="space-y-6 opacity-70">
+                                                ${this.groupItemsByCategory(completedItems).map(group => `
+                                                    <div>
+                                                        <div class="flex items-center gap-2 mb-2 px-3 py-2 bg-slate-100 rounded-lg">
+                                                            <span class="text-lg">${group.emoji}</span>
+                                                            <h3 class="font-semibold text-slate-700">${group.category}</h3>
+                                                            <span class="ml-auto text-xs font-semibold text-slate-600">${group.items.length}</span>
+                                                        </div>
+                                                        <div class="space-y-2">
+                                                            ${group.items.map(item => `
+                                                                <div class="flex flex-col gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200 line-through group">
+                                                                    <div class="flex items-center gap-3">
+                                                                        <button data-toggle-item="${item.id}" class="flex-shrink-0 text-green-500">
+                                                                            ✅
+                                                                        </button>
+                                                                        <span class="emoji">${item.emoji}</span>
+                                                                        <div class="flex-grow">
+                                                                            <div class="font-medium text-slate-600">${item.name}</div>
+                                                                        </div>
+                                                                        <!-- Contrôles de quantité et unité -->
+                                                                        <div class="flex-shrink-0 flex items-center gap-1 bg-slate-200 rounded-lg px-2 py-1">
+                                                                            <button data-decrease-qty="${item.id}" class="text-slate-600 hover:text-slate-900 font-bold text-sm">−</button>
+                                                                            <span class="w-8 text-center text-sm">${item.quantity || 1}</span>
+                                                                            <button data-increase-qty="${item.id}" class="text-slate-600 hover:text-slate-900 font-bold text-sm">+</button>
+                                                                            <span class="text-xs text-slate-600">${item.unit}</span>
+                                                                        </div>
+                                                                        <button data-edit-item="${item.id}" class="flex-shrink-0 text-slate-400 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition">
+                                                                            ✏️
+                                                                        </button>
+                                                                        <button data-delete-item="${item.id}" class="flex-shrink-0 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                                                                            🗑️
+                                                                        </button>
+                                                                    </div>
+                                                                    ${item.notes ? `<div class="text-xs text-slate-600 italic ml-8">💬 ${item.notes}</div>` : ''}
+                                                                </div>
+                                                            `).join('')}
+                                                        </div>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        </div>
+                                    `;
+                                })()}
+
+                            </div>
+                        `}
+                    </div>
+
+                    <!-- Footer -->
+                    ${this.items.length > 0 ? `
+                        <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-xl">
+                            <div class="max-w-4xl mx-auto px-4 py-3 text-center text-sm text-slate-600">
+                                <strong>${this.items.filter(i => !i.completed).length}</strong> article(s) à faire ·
+                                <strong class="ml-1">${completedCount}</strong> complété(s)
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${modalHtml}
+                `;
+
+                document.getElementById('app').innerHTML = html;
+            }
+        }
+
+        // Initialiser l'app au chargement
+        let app;
+        document.addEventListener('DOMContentLoaded', () => {
+            app = new ShoppingApp();
+        });
+    </script>
+</body>
+</html>

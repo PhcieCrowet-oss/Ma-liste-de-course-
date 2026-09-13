@@ -8,33 +8,17 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ml5.js/0.12.0/ml5.min.js"></script>
     <style>
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .spinner { animation: spin 1s linear infinite; }
         .modal-overlay { background: rgba(0,0,0,0.5); }
         .slide-in { animation: slideIn 0.3s ease-out; }
         @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        
-        /* Onglets mobiles */
-        .tabs-container { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; background: white; }
-        .tab-button { flex: 1; padding: 12px 8px; background: none; border: none; cursor: pointer; font-weight: 600; color: #64748b; transition: all 0.3s; border-bottom: 3px solid transparent; font-size: 0.75rem; text-align: center; }
-        .tab-button.active { color: #3b82f6; border-bottom-color: #3b82f6; }
-        .tab-button:hover { color: #1e293b; }
-        
-        /* Layout responsif */
-        .main-container { display: flex; gap: 0; flex-direction: column; }
-        .categories-section { display: none; }
-        .list-section { flex: 1; }
-        .manage-section { display: none; }
-        
+        .tabs { display: flex; gap: 0; border-bottom: 2px solid #e2e8f0; }
+        .tab-btn { flex: 1; padding: 12px; background: none; border: none; cursor: pointer; font-weight: 600; color: #64748b; border-bottom: 3px solid transparent; }
+        .tab-btn.active { color: #3b82f6; border-bottom-color: #3b82f6; }
         @media (min-width: 1024px) {
-            .tabs-container { display: none !important; }
-            .main-container { flex-direction: row; }
-            .categories-section { display: block !important; flex: 0 0 30%; border-right: 1px solid #e2e8f0; overflow-y: auto; }
-            .list-section { display: block !important; flex: 1; }
-            .manage-section { display: none !important; }
+            .tabs { display: none !important; }
         }
     </style>
 </head>
@@ -42,20 +26,19 @@
     <div id="app" class="w-screen h-screen overflow-hidden flex flex-col bg-white"></div>
 
     <script>
-        // Données globales
+        // === CONFIG FIREBASE ===
         let CATEGORIES_DB = {
-            'Fruits': { icon: '🍎', photo: null },
-            'Légumes': { icon: '🥕', photo: null },
-            'Produits laitiers': { icon: '🧀', photo: null },
-            'Protéines': { icon: '🥩', photo: null },
-            'Féculents': { icon: '🥔', photo: null },
-            'Basiques': { icon: '🧂', photo: null },
-            'Surgelés': { icon: '🧊', photo: null },
-            'Divers': { icon: '🛍️', photo: null }
+            'Fruits': { icon: '🍎' },
+            'Légumes': { icon: '🥕' },
+            'Produits laitiers': { icon: '🧀' },
+            'Protéines': { icon: '🥩' },
+            'Féculents': { icon: '🥔' },
+            'Basiques': { icon: '🧂' },
+            'Surgelés': { icon: '🧊' },
+            'Divers': { icon: '🛍️' }
         };
 
         let PRODUCTS_DB = {};
-        let idToken = null;
 
         const firebaseConfig = {
             apiKey: "AIzaSyCol3oPOehiRL6wmcjs6ntrZ8k4qaaJJYc",
@@ -71,676 +54,358 @@
         const auth = firebase.auth();
         const database = firebase.database();
 
-        class ShoppingApp {
+        class App {
             constructor() {
                 this.items = [];
                 this.userName = 'Vous';
-                this.searchTerm = '';
-                this.showSuggestions = false;
-                this.modal = null;
                 this.currentUser = null;
                 this.isLoading = true;
                 this.activeTab = 'list';
                 this.isProcessing = false;
-                this.manageCategory = null;  // Catégorie en cours de gestion
-                this.manageType = null;     // 'categories' ou 'products'
+                this.modal = null;
 
-                this.setupAuthListener();
+                this.setupAuth();
                 this.render();
             }
 
-            setupAuthListener() {
+            setupAuth() {
                 auth.onAuthStateChanged((user) => {
                     if (user) {
                         this.currentUser = user;
                         this.loadData();
-                        this.attachEventListeners();
                     } else {
-                        this.showAuthScreen();
+                        this.showAuth();
                     }
                     this.isLoading = false;
                 });
             }
 
             async loadData() {
-                if (!this.currentUser) return;
                 try {
-                    const localData = localStorage.getItem(`list_${this.currentUser.uid}`);
-                    if (localData) {
-                        const data = JSON.parse(localData);
+                    const local = localStorage.getItem(`app_${this.currentUser.uid}`);
+                    if (local) {
+                        const data = JSON.parse(local);
                         this.items = data.items || [];
                         Object.assign(CATEGORIES_DB, data.categories || {});
                         Object.assign(PRODUCTS_DB, data.products || {});
                         this.userName = data.userName || this.userName;
                     }
-                    
-                    try {
-                        const snapshot = await database.ref('users/' + this.currentUser.uid).once('value');
-                        const data = snapshot.val();
-                        if (data) {
-                            this.items = data.items || [];
-                            Object.assign(CATEGORIES_DB, data.categories || {});
-                            Object.assign(PRODUCTS_DB, data.products || {});
-                            this.userName = data.userName || this.userName;
-                            this.render();
-                        } else if (!localData) {
-                            await this.initializeUserData();
-                        }
-                    } catch (firebaseError) {}
-                    
-                    if (this.currentUser) {
-                        database.ref('users/' + this.currentUser.uid).on('value', (snapshot) => {
-                            const data = snapshot.val();
-                            if (data) {
-                                this.items = data.items || [];
-                                Object.assign(CATEGORIES_DB, data.categories || {});
-                                Object.assign(PRODUCTS_DB, data.products || {});
-                                this.userName = data.userName || this.userName;
-                                this.render();
-                            }
-                        });
+
+                    const snap = await database.ref('users/' + this.currentUser.uid).once('value');
+                    const fbData = snap.val();
+                    if (fbData) {
+                        this.items = fbData.items || [];
+                        Object.assign(CATEGORIES_DB, fbData.categories || {});
+                        Object.assign(PRODUCTS_DB, fbData.products || {});
+                        this.userName = fbData.userName || this.userName;
+                        this.render();
+                    } else if (!local) {
+                        await this.initData();
                     }
-                } catch (error) {
-                    console.error('Erreur chargement:', error);
-                }
+
+                    database.ref('users/' + this.currentUser.uid).on('value', (snap) => {
+                        const fbData = snap.val();
+                        if (fbData) {
+                            this.items = fbData.items || [];
+                            Object.assign(CATEGORIES_DB, fbData.categories || {});
+                            Object.assign(PRODUCTS_DB, fbData.products || {});
+                            this.userName = fbData.userName || this.userName;
+                            this.render();
+                        }
+                    });
+                } catch (e) { console.error(e); }
             }
 
-            async saveData() {
-                if (!this.currentUser) return;
-                const dataToSave = {
-                    items: this.items,
-                    categories: CATEGORIES_DB,
-                    products: PRODUCTS_DB,
-                    userName: this.userName,
-                    lastUpdate: new Date().toISOString()
-                };
-                localStorage.setItem(`list_${this.currentUser.uid}`, JSON.stringify(dataToSave));
-                try {
-                    await database.ref('users/' + this.currentUser.uid).set(dataToSave);
-                } catch (error) {}
+            async initData() {
+                const data = { items: [], categories: CATEGORIES_DB, products: PRODUCTS_DB, userName: this.userName };
+                localStorage.setItem(`app_${this.currentUser.uid}`, JSON.stringify(data));
+                try { await database.ref('users/' + this.currentUser.uid).set(data); } catch (e) {}
             }
 
-            async initializeUserData() {
-                if (!this.currentUser) return;
-                const initialData = {
-                    items: [],
-                    categories: CATEGORIES_DB,
-                    products: PRODUCTS_DB,
-                    userName: this.userName
-                };
-                localStorage.setItem(`list_${this.currentUser.uid}`, JSON.stringify(initialData));
-                try {
-                    await database.ref('users/' + this.currentUser.uid).set(initialData);
-                } catch (error) {}
+            async save() {
+                const data = { items: this.items, categories: CATEGORIES_DB, products: PRODUCTS_DB, userName: this.userName };
+                localStorage.setItem(`app_${this.currentUser.uid}`, JSON.stringify(data));
+                try { await database.ref('users/' + this.currentUser.uid).set(data); } catch (e) {}
             }
 
-            switchTab(tabName) {
-                this.activeTab = tabName;
-                this.render();
-            }
-
-            logout() {
-                auth.signOut();
-                this.currentUser = null;
-                this.showAuthScreen();
-            }
-
-            saveItems() {
-                this.saveData();
-                this.render();
-            }
-
-            toggleItem(itemId) {
-                const item = this.items.find(i => i.id === itemId);
-                if (item) {
-                    item.completed = !item.completed;
-                    this.saveItems();
-                }
-            }
-
-            deleteItem(itemId) {
-                this.items = this.items.filter(i => i.id !== itemId);
-                this.saveItems();
-            }
-
+            // === ITEMS ===
             addItem(product) {
-                const newItem = {
+                if (this.isProcessing) return;
+                this.isProcessing = true;
+                this.items.push({
                     id: Date.now(),
                     productId: product.id,
                     name: product.name,
                     emoji: product.emoji,
                     category: product.category,
-                    quantity: 1,
+                    qty: 1,
                     unit: 'pièce',
-                    completed: false,
-                    notes: ''
-                };
-                this.items.push(newItem);
-                this.saveItems();
+                    notes: '',
+                    done: false
+                });
+                this.save();
+                this.render();
+                setTimeout(() => { this.isProcessing = false; }, 300);
             }
 
-            updateQuantity(itemId, newQuantity) {
-                const item = this.items.find(i => i.id === itemId);
-                if (item && newQuantity > 0) {
-                    item.quantity = newQuantity;
-                    this.saveItems();
+            deleteItem(id) {
+                this.items = this.items.filter(i => i.id !== id);
+                this.save();
+                this.render();
+            }
+
+            toggleItem(id) {
+                const item = this.items.find(i => i.id === id);
+                if (item) item.done = !item.done;
+                this.save();
+                this.render();
+            }
+
+            updateQty(id, qty) {
+                const item = this.items.find(i => i.id === id);
+                if (item && qty > 0) item.qty = qty;
+                this.save();
+                this.render();
+            }
+
+            updateUnit(id, unit) {
+                const item = this.items.find(i => i.id === id);
+                if (item) item.unit = unit;
+                this.save();
+                this.render();
+            }
+
+            updateNotes(id, notes) {
+                const item = this.items.find(i => i.id === id);
+                if (item) item.notes = notes;
+                this.save();
+            }
+
+            increaseQty(id) { this.updateQty(id, (this.items.find(i => i.id === id)?.qty || 1) + 1); }
+            decreaseQty(id) { const q = this.items.find(i => i.id === id)?.qty || 1; if (q > 1) this.updateQty(id, q - 1); }
+
+            // === CATEGORIES ===
+            addCategory() {
+                const name = prompt('Nom de la catégorie:');
+                const icon = prompt('Emoji (ex: 🍎):') || '📦';
+                if (name && !CATEGORIES_DB[name]) {
+                    CATEGORIES_DB[name] = { icon };
+                    PRODUCTS_DB[name] = [];
+                    this.save();
                 }
             }
 
-            increaseQuantity(itemId) {
-                const item = this.items.find(i => i.id === itemId);
-                if (item) {
-                    item.quantity = (item.quantity || 1) + 1;
-                    this.saveItems();
-                }
-            }
-
-            decreaseQuantity(itemId) {
-                const item = this.items.find(i => i.id === itemId);
-                if (item && item.quantity > 1) {
-                    item.quantity = (item.quantity || 1) - 1;
-                    this.saveItems();
-                }
-            }
-
-            changeUnit(itemId, unit) {
-                const item = this.items.find(i => i.id === itemId);
-                if (item) {
-                    item.unit = unit;
-                    this.saveItems();
-                }
-            }
-
-            // === GESTION DES CATÉGORIES ===
-            addCategory(name, icon) {
-                if (!name || CATEGORIES_DB[name]) return;
-                CATEGORIES_DB[name] = { icon, photo: null };
-                PRODUCTS_DB[name] = [];
-                this.saveData();
-            }
-
-            deleteCategory(categoryName) {
-                if (CATEGORIES_DB[categoryName]) {
-                    delete CATEGORIES_DB[categoryName];
-                    if (PRODUCTS_DB[categoryName]) {
-                        delete PRODUCTS_DB[categoryName];
-                    }
-                    this.items = this.items.filter(item => item.category !== categoryName);
-                    this.saveData();
-                }
-            }
-
-            editCategory(oldName, newName, newIcon) {
-                if (CATEGORIES_DB[oldName] && newName) {
-                    const data = CATEGORIES_DB[oldName];
+            editCategory(oldName) {
+                const newName = prompt('Nouveau nom:', oldName);
+                const newIcon = prompt('Emoji:', CATEGORIES_DB[oldName].icon);
+                if (newName && newName !== oldName) {
+                    CATEGORIES_DB[newName] = CATEGORIES_DB[oldName];
                     delete CATEGORIES_DB[oldName];
-                    CATEGORIES_DB[newName] = { icon: newIcon, photo: data.photo };
-                    
                     if (PRODUCTS_DB[oldName]) {
                         PRODUCTS_DB[newName] = PRODUCTS_DB[oldName];
                         delete PRODUCTS_DB[oldName];
                     }
-                    
-                    this.items.forEach(item => {
-                        if (item.category === oldName) item.category = newName;
-                    });
-                    this.saveData();
+                    this.items.forEach(i => { if (i.category === oldName) i.category = newName; });
+                    this.save();
+                } else if (newIcon) {
+                    CATEGORIES_DB[oldName].icon = newIcon;
+                    this.save();
                 }
             }
 
-            // === GESTION DES PRODUITS ===
-            addProduct(categoryName, name, emoji) {
-                if (!categoryName || !PRODUCTS_DB[categoryName]) return;
-                const product = {
-                    id: 'prod_' + Date.now(),
-                    name,
-                    emoji: emoji || '📦',
-                    category: categoryName,
-                    photo: null
-                };
-                PRODUCTS_DB[categoryName].push(product);
-                this.saveData();
-            }
-
-            deleteProduct(categoryName, productId) {
-                if (PRODUCTS_DB[categoryName]) {
-                    PRODUCTS_DB[categoryName] = PRODUCTS_DB[categoryName].filter(p => p.id !== productId);
-                    this.items = this.items.filter(item => item.productId !== productId);
-                    this.saveData();
+            deleteCategory(name) {
+                if (confirm(`Supprimer "${name}" ?`)) {
+                    delete CATEGORIES_DB[name];
+                    delete PRODUCTS_DB[name];
+                    this.items = this.items.filter(i => i.category !== name);
+                    this.save();
                 }
             }
 
-            editProduct(categoryName, productId, newName, newEmoji) {
-                if (PRODUCTS_DB[categoryName]) {
-                    const product = PRODUCTS_DB[categoryName].find(p => p.id === productId);
-                    if (product) {
-                        product.name = newName;
-                        product.emoji = newEmoji || product.emoji;
-                        this.saveData();
-                    }
+            // === PRODUCTS ===
+            addProduct(catName) {
+                const name = prompt('Nom du produit:');
+                const emoji = prompt('Emoji:') || '📦';
+                if (name) {
+                    if (!PRODUCTS_DB[catName]) PRODUCTS_DB[catName] = [];
+                    PRODUCTS_DB[catName].push({ id: 'p_' + Date.now(), name, emoji, category: catName });
+                    this.save();
                 }
             }
 
-            findProduct(productId) {
-                for (const category in PRODUCTS_DB) {
-                    const product = PRODUCTS_DB[category].find(p => p.id === productId);
-                    if (product) return product;
+            editProduct(catName, prodId) {
+                const prod = PRODUCTS_DB[catName]?.find(p => p.id === prodId);
+                if (!prod) return;
+                const name = prompt('Nom:', prod.name);
+                const emoji = prompt('Emoji:', prod.emoji);
+                if (name) prod.name = name;
+                if (emoji) prod.emoji = emoji;
+                this.save();
+            }
+
+            deleteProduct(catName, prodId) {
+                if (confirm('Supprimer ce produit ?')) {
+                    PRODUCTS_DB[catName] = PRODUCTS_DB[catName]?.filter(p => p.id !== prodId);
+                    this.items = this.items.filter(i => i.productId !== prodId);
+                    this.save();
                 }
-                return null;
-            }
-
-            showCategoryModal(categoryName) {
-                this.modal = { type: 'category', categoryName };
-                this.render();
-            }
-
-            attachEventListeners() {
-                const searchInput = document.getElementById('search-input');
-                if (searchInput) {
-                    searchInput.addEventListener('input', (e) => {
-                        this.searchTerm = e.target.value;
-                        this.render();
-                    });
-                }
-
-                // Listeners pour change et input (unités et quantités)
-                document.addEventListener('change', (e) => {
-                    if (e.target.matches('select[data-change-unit]')) {
-                        const itemId = parseInt(e.target.dataset.changeUnit);
-                        const newUnit = e.target.value;
-                        this.changeUnit(itemId, newUnit);
-                    }
-                }, true);
-
-                document.addEventListener('input', (e) => {
-                    if (e.target.matches('input[data-qty-input]')) {
-                        const itemId = parseInt(e.target.dataset.qtyInput);
-                        const quantity = parseInt(e.target.value) || 1;
-                        this.updateQuantity(itemId, quantity);
-                    }
-                }, true);
-
-                // Main click listener
-                document.addEventListener('click', (e) => {
-                    // Tab buttons
-                    if (e.target.closest('[data-tab-button]')) {
-                        const tabName = e.target.closest('[data-tab-button]').dataset.tabButton;
-                        this.switchTab(tabName);
-                    }
-
-                    // Add from category
-                    if (e.target.closest('[data-add-from-category]')) {
-                        if (this.isProcessing) return;
-                        this.isProcessing = true;
-                        const productId = e.target.closest('[data-add-from-category]').dataset.addFromCategory;
-                        const product = this.findProduct(productId);
-                        if (product) this.addItem(product);
-                        setTimeout(() => { this.isProcessing = false; }, 300);
-                    }
-
-                    // Toggle item
-                    if (e.target.closest('[data-toggle-item]')) {
-                        const itemId = parseInt(e.target.closest('[data-toggle-item]').dataset.toggleItem);
-                        this.toggleItem(itemId);
-                    }
-
-                    // Delete item
-                    if (e.target.closest('[data-delete-item]')) {
-                        const itemId = parseInt(e.target.closest('[data-delete-item]').dataset.deleteItem);
-                        if (confirm('Supprimer cet article ?')) this.deleteItem(itemId);
-                    }
-
-                    // Increase qty
-                    if (e.target.closest('[data-increase-qty]')) {
-                        const itemId = parseInt(e.target.closest('[data-increase-qty]').dataset.increaseQty);
-                        this.increaseQuantity(itemId);
-                    }
-
-                    // Decrease qty
-                    if (e.target.closest('[data-decrease-qty]')) {
-                        const itemId = parseInt(e.target.closest('[data-decrease-qty]').dataset.decreaseQty);
-                        this.decreaseQuantity(itemId);
-                    }
-
-                    // Show category
-                    if (e.target.closest('[data-show-category]')) {
-                        const category = e.target.closest('[data-show-category]').dataset.showCategory;
-                        this.showCategoryModal(category);
-                    }
-
-                    // Close modal
-                    if (e.target.closest('[data-close-modal]')) {
-                        this.modal = null;
-                        this.render();
-                    }
-
-                    // Show category management
-                    if (e.target.closest('[data-manage-category]')) {
-                        const categoryName = e.target.closest('[data-manage-category]').dataset.manageCategory;
-                        this.manageCategory = categoryName;
-                        this.manageType = 'products';
-                        this.render();
-                    }
-
-                    // Back to categories management
-                    if (e.target.closest('[data-back-manage]')) {
-                        this.manageCategory = null;
-                        this.manageType = null;
-                        this.render();
-                    }
-
-                    // Add category
-                    if (e.target.closest('[data-add-cat-btn]')) {
-                        const catName = prompt('Nom de la catégorie:');
-                        const catIcon = prompt('Emoji (ex: 🍎):') || '📦';
-                        if (catName) this.addCategory(catName, catIcon);
-                    }
-
-                    // Delete category
-                    if (e.target.closest('[data-delete-cat]')) {
-                        const catName = e.target.closest('[data-delete-cat]').dataset.deleteCat;
-                        if (confirm(`Supprimer "${catName}" ?`)) this.deleteCategory(catName);
-                    }
-
-                    // Edit category
-                    if (e.target.closest('[data-edit-cat]')) {
-                        const catName = e.target.closest('[data-edit-cat]').dataset.editCat;
-                        const newName = prompt('Nouveau nom:', catName);
-                        const newIcon = prompt('Nouveau emoji:', CATEGORIES_DB[catName].icon);
-                        if (newName) this.editCategory(catName, newName, newIcon || '📦');
-                    }
-
-                    // Add product
-                    if (e.target.closest('[data-add-prod-btn]')) {
-                        const catName = this.manageCategory;
-                        const prodName = prompt('Nom du produit:');
-                        const prodEmoji = prompt('Emoji:') || '📦';
-                        if (prodName) this.addProduct(catName, prodName, prodEmoji);
-                    }
-
-                    // Delete product
-                    if (e.target.closest('[data-delete-prod]')) {
-                        const prodId = e.target.closest('[data-delete-prod]').dataset.deleteProd;
-                        if (confirm('Supprimer ce produit ?')) {
-                            this.deleteProduct(this.manageCategory, prodId);
-                        }
-                    }
-
-                    // Logout
-                    if (e.target.closest('[data-logout]')) {
-                        this.logout();
-                    }
-                });
-
-                document.addEventListener('keydown', (e) => {
-                    if (e.key === 'Escape' && this.modal) {
-                        this.modal = null;
-                        this.render();
-                    }
-                });
-            }
-
-            renderCategoryModal() {
-                const categoryName = this.modal.categoryName;
-                const products = PRODUCTS_DB[categoryName] || [];
-                
-                return `
-                    <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
-                        <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-96 overflow-y-auto slide-in">
-                            <div class="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
-                                <h2 class="text-xl font-bold text-slate-900">${CATEGORIES_DB[categoryName].icon} ${categoryName}</h2>
-                                <button data-close-modal class="text-slate-500 hover:text-slate-700 text-2xl">×</button>
-                            </div>
-                            <div class="p-4">
-                                ${products.length === 0 ? `
-                                    <p class="text-center text-slate-500">Aucun produit</p>
-                                ` : `
-                                    <div class="grid grid-cols-2 gap-2">
-                                        ${products.map(product => `
-                                            <button data-add-from-category="${product.id}" class="flex flex-col items-center gap-2 p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition">
-                                                <span class="text-2xl">${product.emoji || '📦'}</span>
-                                                <span class="text-xs font-medium text-center text-slate-900 line-clamp-2">${product.name}</span>
-                                            </button>
-                                        `).join('')}
-                                    </div>
-                                `}
-                            </div>
-                        </div>
-                    </div>
-                `;
             }
 
             render() {
                 if (this.isLoading) {
-                    document.getElementById('app').innerHTML = `
-                        <div class="flex items-center justify-center w-full h-full">
-                            <div class="text-center">
-                                <div class="text-4xl mb-4">🛒</div>
-                                <div class="text-2xl font-bold mb-4">Chargement...</div>
-                                <div class="text-blue-500 text-4xl spinner">⏳</div>
+                    document.getElementById('app').innerHTML = `<div class="flex items-center justify-center w-full h-full"><div class="text-center"><div class="text-4xl spinner">⏳</div></div></div>`;
+                    return;
+                }
+
+                const completedCount = this.items.filter(i => i.done).length;
+                const categories = Object.keys(CATEGORIES_DB);
+
+                let modal = '';
+                if (this.modal?.type === 'categoryProducts') {
+                    const cat = this.modal.category;
+                    const prods = PRODUCTS_DB[cat] || [];
+                    modal = `
+                        <div class="fixed inset-0 modal-overlay z-50 flex items-center justify-center p-4">
+                            <div class="bg-white rounded-lg shadow-xl max-w-md w-full slide-in">
+                                <div class="sticky top-0 bg-white border-b p-4 flex justify-between">
+                                    <h2 class="text-xl font-bold">${CATEGORIES_DB[cat].icon} ${cat}</h2>
+                                    <button onclick="app.modal=null;app.render()" class="text-2xl">×</button>
+                                </div>
+                                <div class="p-4 max-h-96 overflow-y-auto">
+                                    ${prods.length === 0 ? '<p class="text-slate-500">Aucun produit</p>' : `<div class="grid grid-cols-2 gap-2">${prods.map(p => `<button onclick="app.addItem({id:'${p.id}',name:'${p.name}',emoji:'${p.emoji}',category:'${p.category}'});app.modal=null;app.render()" class="p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded"><div class="text-2xl">${p.emoji}</div><div class="text-xs font-medium text-center">${p.name}</div></button>`).join('')}</div>`}
+                                </div>
                             </div>
                         </div>
                     `;
-                    return;
-                }
-
-                if (!this.currentUser) {
-                    this.showAuthScreen();
-                    return;
-                }
-
-                const completedCount = this.items.filter(i => i.completed).length;
-                const categories = Object.keys(CATEGORIES_DB);
-                const displayItems = this.items;
-
-                let modalHtml = '';
-                if (this.modal) {
-                    if (this.modal.type === 'category') {
-                        modalHtml = this.renderCategoryModal();
-                    }
                 }
 
                 const html = `
-                    <!-- Onglets mobiles -->
-                    <div class="lg:hidden sticky top-0 z-40 bg-white border-b-2 border-slate-200 tabs-container">
-                        <button data-tab-button="list" class="tab-button ${this.activeTab === 'list' ? 'active' : ''}">📝 Ma Liste</button>
-                        <button data-tab-button="categories" class="tab-button ${this.activeTab === 'categories' ? 'active' : ''}">📂 Catégories</button>
-                        <button data-tab-button="manage" class="tab-button ${this.activeTab === 'manage' ? 'active' : ''}">⚙️ Gérer</button>
+                    <div class="lg:hidden tabs">
+                        <button onclick="app.activeTab='list';app.render()" class="tab-btn ${this.activeTab === 'list' ? 'active' : ''}">📝 Liste</button>
+                        <button onclick="app.activeTab='cats';app.render()" class="tab-btn ${this.activeTab === 'cats' ? 'active' : ''}">📂 Catégories</button>
                     </div>
 
-                    <div class="flex flex-col lg:flex-row flex-1 overflow-hidden main-container">
-                        <!-- Catégories (desktop left, mobile tab) -->
-                        <div class="categories-section ${this.activeTab === 'categories' ? 'block' : ''} overflow-y-auto">
-                            <div class="p-4">
-                                <h2 class="text-lg font-bold text-slate-900 mb-4">📂 Catégories</h2>
-                                <div class="grid grid-cols-2 gap-3">
-                                    ${categories.map(cat => `
-                                        <button data-show-category="${cat}" class="flex flex-col items-center gap-2 p-4 bg-gradient-to-br from-slate-50 to-slate-100 hover:from-blue-50 hover:to-blue-100 border border-slate-200 rounded-lg transition">
-                                            <span class="text-3xl">${CATEGORIES_DB[cat].icon}</span>
-                                            <span class="text-sm font-semibold text-slate-900 text-center">${cat}</span>
-                                        </button>
-                                    `).join('')}
-                                </div>
+                    <div class="flex flex-col lg:flex-row flex-1 overflow-hidden">
+                        <!-- Catégories -->
+                        <div class="lg:w-96 lg:border-r lg:overflow-y-auto ${this.activeTab === 'cats' ? 'block' : 'hidden lg:block'} overflow-y-auto p-4">
+                            <div class="flex justify-between items-center mb-4">
+                                <h2 class="text-lg font-bold">📂 Catégories</h2>
+                                <button onclick="app.addCategory()" class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded">+</button>
                             </div>
-                        </div>
-
-                        <!-- Ma Liste (desktop right, mobile tab) -->
-                        <div class="list-section ${this.activeTab === 'list' ? 'block' : ''} overflow-y-auto flex flex-col">
-                            <div class="p-4 space-y-3 flex-1">
-                                <div class="flex justify-between items-center mb-4">
-                                    <h2 class="text-lg font-bold text-slate-900">📝 Ma Liste</h2>
-                                    <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">${completedCount}/${this.items.length}</span>
-                                </div>
-
-                                ${displayItems.length === 0 ? `
-                                    <div class="text-center py-8 text-slate-500">
-                                        <p class="text-2xl mb-2">📭</p>
-                                        <p>Votre liste est vide</p>
-                                    </div>
-                                ` : `
-                                    <!-- Articles non cochés -->
-                                    ${displayItems.filter(i => !i.completed).map(item => `
-                                        <div class="flex items-center gap-2 p-3 bg-white border border-slate-200 rounded-lg hover:border-blue-300">
-                                            <input type="checkbox" data-toggle-item="${item.id}" class="w-5 h-5 cursor-pointer">
-                                            <div class="flex-1 min-w-0">
-                                                <div class="font-semibold text-slate-900">${item.emoji} ${item.name}</div>
-                                                <div class="text-xs text-slate-500">${item.category}</div>
+                            <div class="space-y-2">
+                                ${categories.map(cat => `
+                                    <div class="p-3 bg-white border border-slate-200 rounded-lg">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <div class="flex items-center gap-2 cursor-pointer flex-1" onclick="app.modal={type:'categoryProducts',category:'${cat}'};app.render()">
+                                                <span class="text-2xl">${CATEGORIES_DB[cat].icon}</span>
+                                                <span class="font-medium">${cat}</span>
                                             </div>
-                                            <div class="flex items-center gap-1">
-                                                <button data-decrease-qty="${item.id}" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm">−</button>
-                                                <input type="number" data-qty-input="${item.id}" min="1" value="${item.quantity || 1}" class="w-12 text-center border border-slate-300 rounded px-1 text-sm">
-                                                <button data-increase-qty="${item.id}" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded text-sm">+</button>
-                                                <select data-change-unit="${item.id}" class="border border-slate-300 rounded px-1 text-xs">
-                                                    <option value="pièce" ${item.unit === 'pièce' ? 'selected' : ''}>pièce</option>
-                                                    <option value="g" ${item.unit === 'g' ? 'selected' : ''}>g</option>
-                                                    <option value="kg" ${item.unit === 'kg' ? 'selected' : ''}>kg</option>
-                                                </select>
-                                                <button data-delete-item="${item.id}" class="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-600 rounded text-sm">🗑️</button>
-                                            </div>
+                                            <button onclick="app.editCategory('${cat}')" class="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded">✏️</button>
+                                            <button onclick="app.deleteCategory('${cat}')" class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded">🗑️</button>
                                         </div>
-                                    `).join('')}
-
-                                    <!-- Articles cochés -->
-                                    ${displayItems.filter(i => i.completed).length > 0 ? `
-                                        <div class="mt-6 pt-6 border-t-2 border-slate-300">
-                                            <h3 class="font-bold text-slate-900 mb-3">✅ Articles récoltés (${displayItems.filter(i => i.completed).length})</h3>
-                                            <div class="space-y-2 opacity-60">
-                                                ${displayItems.filter(i => i.completed).map(item => `
-                                                    <div class="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg line-through">
-                                                        <input type="checkbox" data-toggle-item="${item.id}" checked class="w-5 h-5 cursor-pointer">
-                                                        <div class="flex-1">
-                                                            <div class="text-slate-700">${item.emoji} ${item.name}</div>
+                                        <button onclick="app.addProduct('${cat}')" class="w-full px-2 py-1 bg-green-100 hover:bg-green-200 text-green-700 text-xs rounded">+ Produit</button>
+                                        ${PRODUCTS_DB[cat] && PRODUCTS_DB[cat].length > 0 ? `
+                                            <div class="mt-2 space-y-1 text-xs">
+                                                ${PRODUCTS_DB[cat].map(p => `
+                                                    <div class="flex items-center justify-between bg-slate-50 p-2 rounded">
+                                                        <span>${p.emoji} ${p.name}</span>
+                                                        <div class="flex gap-1">
+                                                            <button onclick="app.editProduct('${cat}','${p.id}')" class="px-1 py-0 bg-blue-500 hover:bg-blue-600 text-white rounded">✏️</button>
+                                                            <button onclick="app.deleteProduct('${cat}','${p.id}')" class="px-1 py-0 bg-red-500 hover:bg-red-600 text-white rounded">🗑️</button>
                                                         </div>
-                                                        <button data-delete-item="${item.id}" class="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-600 rounded text-sm">🗑️</button>
                                                     </div>
                                                 `).join('')}
                                             </div>
-                                        </div>
-                                    ` : ''}
-                                `}
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
                             </div>
                         </div>
 
-                        <!-- Gérer -->
-                        <div class="manage-section ${this.activeTab === 'manage' ? 'block' : ''} overflow-y-auto flex-1">
-                            <div class="p-4 space-y-6">
-                                ${!this.manageCategory ? `
-                                    <!-- Gestion des catégories -->
-                                    <div>
-                                        <div class="flex justify-between items-center mb-3">
-                                            <h3 class="text-lg font-bold">📂 Catégories</h3>
-                                            <button data-add-cat-btn class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded">+</button>
+                        <!-- Liste -->
+                        <div class="flex-1 overflow-y-auto ${this.activeTab === 'list' ? 'block' : 'hidden lg:block'} p-4">
+                            <div class="flex justify-between items-center mb-4">
+                                <h2 class="text-lg font-bold">📝 Ma Liste</h2>
+                                <span class="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">${completedCount}/${this.items.length}</span>
+                            </div>
+
+                            ${this.items.length === 0 ? '<p class="text-center text-slate-500 py-8">Liste vide</p>' : `
+                                <!-- Articles non cochés -->
+                                <div class="space-y-3 mb-6">
+                                    ${this.items.filter(i => !i.done).map(item => `
+                                        <div class="p-3 bg-white border border-slate-200 rounded-lg">
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <input type="checkbox" onchange="app.toggleItem(${item.id})" class="w-5 h-5 cursor-pointer">
+                                                <div class="flex-1">
+                                                    <div class="font-semibold text-slate-900">${item.emoji} ${item.name}</div>
+                                                    <div class="text-xs text-slate-500">${item.category}</div>
+                                                </div>
+                                                <button onclick="app.deleteItem(${item.id})" class="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-600 text-sm rounded">🗑️</button>
+                                            </div>
+                                            <div class="flex items-center gap-2 mb-2 flex-wrap">
+                                                <button onclick="app.decreaseQty(${item.id})" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-sm rounded">−</button>
+                                                <input type="number" value="${item.qty}" min="1" onchange="app.updateQty(${item.id},parseInt(this.value))" class="w-16 text-center border border-slate-300 rounded px-1 text-sm">
+                                                <button onclick="app.increaseQty(${item.id})" class="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-sm rounded">+</button>
+                                                <select onchange="app.updateUnit(${item.id},this.value)" class="border border-slate-300 rounded px-2 text-sm">
+                                                    <option value="pièce" ${item.unit === 'pièce' ? 'selected' : ''}>pièce</option>
+                                                    <option value="g" ${item.unit === 'g' ? 'selected' : ''}>g</option>
+                                                    <option value="kg" ${item.unit === 'kg' ? 'selected' : ''}>kg</option>
+                                                    <option value="ml" ${item.unit === 'ml' ? 'selected' : ''}>ml</option>
+                                                    <option value="L" ${item.unit === 'L' ? 'selected' : ''}>L</option>
+                                                </select>
+                                            </div>
+                                            <input type="text" placeholder="Commentaire..." value="${item.notes}" onchange="app.updateNotes(${item.id},this.value)" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" style="font-size: 14px;">
                                         </div>
-                                        <div class="space-y-2 max-h-64 overflow-y-auto">
-                                            ${Object.keys(CATEGORIES_DB).map(catName => `
-                                                <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg hover:border-blue-300">
-                                                    <div class="flex items-center gap-2 cursor-pointer flex-1" data-manage-category="${catName}">
-                                                        <span class="text-2xl">${CATEGORIES_DB[catName].icon}</span>
-                                                        <span class="font-medium text-slate-900">${catName}</span>
+                                    `).join('')}
+                                </div>
+
+                                <!-- Articles cochés -->
+                                ${this.items.filter(i => i.done).length > 0 ? `
+                                    <div class="border-t-2 pt-4">
+                                        <h3 class="font-bold mb-3">✅ Articles récoltés</h3>
+                                        <div class="space-y-2 opacity-60">
+                                            ${this.items.filter(i => i.done).map(item => `
+                                                <div class="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg line-through">
+                                                    <input type="checkbox" checked onchange="app.toggleItem(${item.id})" class="w-5 h-5 cursor-pointer">
+                                                    <div class="flex-1">
+                                                        <div class="text-slate-700">${item.emoji} ${item.name}</div>
                                                     </div>
-                                                    <div class="flex gap-1">
-                                                        <button data-edit-cat="${catName}" class="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded">✏️</button>
-                                                        <button data-delete-cat="${catName}" class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded">🗑️</button>
-                                                    </div>
+                                                    <button onclick="app.deleteItem(${item.id})" class="px-2 py-1 bg-red-100 hover:bg-red-200 text-red-600 text-sm rounded">🗑️</button>
                                                 </div>
                                             `).join('')}
                                         </div>
                                     </div>
-
-                                    <!-- Profil -->
-                                    <div class="border-t pt-4">
-                                        <h3 class="text-lg font-bold mb-3">👤 Profil</h3>
-                                        <p class="text-slate-700">Connecté: <strong>${this.userName}</strong></p>
-                                    </div>
-
-                                    <!-- Logout -->
-                                    <button data-logout class="w-full px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold">
-                                        🚪 Se déconnecter
-                                    </button>
-                                ` : `
-                                    <!-- Gestion des produits d'une catégorie -->
-                                    <div>
-                                        <div class="flex items-center gap-2 mb-4 pb-4 border-b">
-                                            <button data-back-manage class="px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded">← Retour</button>
-                                            <h3 class="text-lg font-bold">${CATEGORIES_DB[this.manageCategory].icon} ${this.manageCategory}</h3>
-                                            <button data-add-prod-btn class="ml-auto px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded">+ Produit</button>
-                                        </div>
-
-                                        ${!PRODUCTS_DB[this.manageCategory] || PRODUCTS_DB[this.manageCategory].length === 0 ? `
-                                            <p class="text-center text-slate-500 py-8">Aucun produit</p>
-                                        ` : `
-                                            <div class="space-y-2">
-                                                ${PRODUCTS_DB[this.manageCategory].map(product => `
-                                                    <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
-                                                        <div class="flex items-center gap-2">
-                                                            <span class="text-2xl">${product.emoji}</span>
-                                                            <span class="font-medium text-slate-900">${product.name}</span>
-                                                        </div>
-                                                        <button data-delete-prod="${product.id}" class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded">🗑️</button>
-                                                    </div>
-                                                `).join('')}
-                                            </div>
-                                        `}
-                                    </div>
-                                `}
-                            </div>
+                                ` : ''}
+                            `}
                         </div>
                     </div>
 
-                    ${modalHtml}
+                    ${modal}
                 `;
 
                 document.getElementById('app').innerHTML = html;
-                this.attachEventListeners();
             }
 
-            showAuthScreen() {
-                const authHtml = `
+            showAuth() {
+                document.getElementById('app').innerHTML = `
                     <div class="flex items-center justify-center w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50">
                         <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full">
-                            <div class="text-center mb-8">
-                                <div class="text-5xl mb-4">🛒</div>
-                                <h1 class="text-3xl font-bold text-slate-900">Ma Liste</h1>
-                                <p class="text-slate-600 mt-2">Synchronisation en temps réel</p>
+                            <h1 class="text-3xl font-bold text-center mb-8">🛒 Ma Liste</h1>
+                            <div class="space-y-4">
+                                <input type="email" id="email" placeholder="Email" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                                <input type="password" id="pwd" placeholder="Mot de passe" class="w-full px-4 py-2 border border-slate-300 rounded-lg">
+                                <button onclick="auth.signInWithEmailAndPassword(document.getElementById('email').value,document.getElementById('pwd').value).catch(e=>alert(e.message))" class="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold">Se connecter</button>
+                                <button onclick="auth.createUserWithEmailAndPassword(document.getElementById('email').value,document.getElementById('pwd').value).catch(e=>alert(e.message))" class="w-full px-4 py-2 bg-slate-300 hover:bg-slate-400 text-slate-900 rounded-lg font-semibold">Créer un compte</button>
                             </div>
-                            <form id="auth-form" class="space-y-4">
-                                <input type="email" id="auth-email" placeholder="Email" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" required>
-                                <input type="password" id="auth-password" placeholder="Mot de passe" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" required>
-                                <button type="button" id="signin-btn" class="w-full px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold">Se connecter</button>
-                                <button type="button" id="signup-btn" class="w-full px-4 py-2 bg-slate-300 hover:bg-slate-400 text-slate-900 rounded-lg font-semibold">Créer un compte</button>
-                            </form>
-                            <div id="auth-error" class="mt-4 text-red-600 text-center"></div>
                         </div>
                     </div>
                 `;
-                
-                document.getElementById('app').innerHTML = authHtml;
-
-                document.getElementById('signin-btn').addEventListener('click', async () => {
-                    const email = document.getElementById('auth-email').value;
-                    const password = document.getElementById('auth-password').value;
-                    try {
-                        await auth.signInWithEmailAndPassword(email, password);
-                    } catch (error) {
-                        document.getElementById('auth-error').textContent = error.message;
-                    }
-                });
-
-                document.getElementById('signup-btn').addEventListener('click', async () => {
-                    const email = document.getElementById('auth-email').value;
-                    const password = document.getElementById('auth-password').value;
-                    try {
-                        await auth.createUserWithEmailAndPassword(email, password);
-                    } catch (error) {
-                        document.getElementById('auth-error').textContent = error.message;
-                    }
-                });
             }
         }
 
         let app;
         document.addEventListener('DOMContentLoaded', () => {
-            app = new ShoppingApp();
+            app = new App();
         });
     </script>
 </body>

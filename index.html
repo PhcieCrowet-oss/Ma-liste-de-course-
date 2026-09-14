@@ -292,22 +292,36 @@
                                 <h2 class="text-lg font-bold">📂 Catégories</h2>
                                 <button onclick="app.addCategory()" class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded">+</button>
                             </div>
-                            <div class="space-y-2">
+
+                            <!-- Menu déroulant des catégories -->
+                            <div class="mb-4">
+                                <select id="catSelect" onchange="if(this.value) { document.getElementById('catDetails').style.display='block'; document.getElementById('catDetailsContent').innerHTML = document.getElementById('cat_'+this.value).innerHTML; }" class="w-full px-3 py-2 border border-slate-300 rounded-lg">
+                                    <option value="">-- Sélectionner une catégorie --</option>
+                                    ${categories.map(cat => `<option value="${cat}">${CATEGORIES_DB[cat].icon} ${cat}</option>`).join('')}
+                                </select>
+                            </div>
+
+                            <!-- Détails de la catégorie sélectionnée -->
+                            <div id="catDetails" style="display:none;">
+                                <div id="catDetailsContent"></div>
+                            </div>
+
+                            <!-- Catégories cachées (pour remplir le contenu du déroulant) -->
+                            <div style="display:none;">
                                 ${categories.map(cat => `
-                                    <div class="p-3 bg-white border border-slate-200 rounded-lg">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <div class="flex items-center gap-2 cursor-pointer flex-1" onclick="app.modal={type:'categoryProducts',category:'${cat}'};app.render()">
-                                                <span class="text-2xl">${CATEGORIES_DB[cat].icon}</span>
-                                                <span class="font-medium">${cat}</span>
+                                    <div id="cat_${cat}">
+                                        <div class="flex items-center justify-between mb-3 pb-3 border-b">
+                                            <h3 class="text-lg font-bold">${CATEGORIES_DB[cat].icon} ${cat}</h3>
+                                            <div class="flex gap-1">
+                                                <button onclick="app.editCategory('${cat}')" class="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded">✏️</button>
+                                                <button onclick="app.deleteCategory('${cat}')" class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded">🗑️</button>
                                             </div>
-                                            <button onclick="app.editCategory('${cat}')" class="px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded">✏️</button>
-                                            <button onclick="app.deleteCategory('${cat}')" class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded">🗑️</button>
                                         </div>
-                                        <button onclick="app.addProduct('${cat}')" class="w-full px-2 py-1 bg-green-100 hover:bg-green-200 text-green-700 text-xs rounded">+ Produit</button>
+                                        <button onclick="app.addProduct('${cat}')" class="w-full px-2 py-1 bg-green-100 hover:bg-green-200 text-green-700 text-xs rounded mb-3">+ Produit</button>
                                         ${PRODUCTS_DB[cat] && PRODUCTS_DB[cat].length > 0 ? `
-                                            <div class="mt-2 space-y-1 text-xs">
+                                            <div class="space-y-2">
                                                 ${PRODUCTS_DB[cat].map(p => `
-                                                    <div class="flex items-center justify-between bg-slate-50 p-2 rounded">
+                                                    <div class="flex items-center justify-between bg-slate-50 p-2 rounded text-xs">
                                                         <span>${p.emoji} ${p.name}</span>
                                                         <div class="flex gap-1">
                                                             <button onclick="app.editProduct('${cat}','${p.id}')" class="px-1 py-0 bg-blue-500 hover:bg-blue-600 text-white rounded">✏️</button>
@@ -316,7 +330,7 @@
                                                     </div>
                                                 `).join('')}
                                             </div>
-                                        ` : ''}
+                                        ` : '<p class="text-xs text-slate-500">Aucun produit</p>'}
                                     </div>
                                 `).join('')}
                             </div>

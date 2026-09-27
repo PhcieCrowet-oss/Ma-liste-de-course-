@@ -192,6 +192,7 @@
                     CATEGORIES_DB[name] = { icon };
                     PRODUCTS_DB[name] = [];
                     this.save();
+                    this.render();
                 }
             }
 
@@ -207,9 +208,11 @@
                     }
                     this.items.forEach(i => { if (i.category === oldName) i.category = newName; });
                     this.save();
+                    this.render();
                 } else if (newIcon) {
                     CATEGORIES_DB[oldName].icon = newIcon;
                     this.save();
+                    this.render();
                 }
             }
 
@@ -219,6 +222,7 @@
                     delete PRODUCTS_DB[name];
                     this.items = this.items.filter(i => i.category !== name);
                     this.save();
+                    this.render();
                 }
             }
 
@@ -230,6 +234,7 @@
                     if (!PRODUCTS_DB[catName]) PRODUCTS_DB[catName] = [];
                     PRODUCTS_DB[catName].push({ id: 'p_' + Date.now(), name, emoji, category: catName });
                     this.save();
+                    this.render();
                 }
             }
 
@@ -241,6 +246,7 @@
                 if (name) prod.name = name;
                 if (emoji) prod.emoji = emoji;
                 this.save();
+                this.render();
             }
 
             deleteProduct(catName, prodId) {
@@ -248,6 +254,7 @@
                     PRODUCTS_DB[catName] = PRODUCTS_DB[catName]?.filter(p => p.id !== prodId);
                     this.items = this.items.filter(i => i.productId !== prodId);
                     this.save();
+                    this.render();
                 }
             }
 
@@ -258,7 +265,7 @@
                 }
 
                 const completedCount = this.items.filter(i => i.done).length;
-                const categories = Object.keys(CATEGORIES_DB);
+                const categories = Object.keys(CATEGORIES_DB).sort();
 
                 let modal = '';
                 if (this.modal?.type === 'categoryProducts') {
